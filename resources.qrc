@@ -1,0 +1,42 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file>images/alphabetical_sorting_az.svg</file>
+    <file>images/select_all.svg</file>
+    <file>images/qr-code.svg</file>
+    <file>images/Custom-Icon-Design-Flatastic-1-Edit.svg</file>
+    <file>images/pin.svg</file>
+    <file>images/minus.svg</file>
+    <file>images/plus.svg</file>
+    <file>images/file-picture.svg</file>
+    <file>images/notepad.svg</file>
+    <file>images/file-text.svg</file>
+    <file>images/puzzle.svg</file>
+    <file>images/star.svg</file>
+    <file>images/star-alt.svg</file>
+    <file>images/Close2Cross.svg</file>
+    <file>images/CloseCross.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Magnify-normal.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Sign-up.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Sign-down.svg</file>
+    <file>images/CloseGray.svg</file>
+    <file>images/Settings.svg</file>
+    <file>images/RulePencil.svg</file>
+    <file>images/Pictogrammers-Material-File-File-outline_on.svg</file>
+    <file>images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg</file>
+    <file>images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg</file>
+    <file>images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg</file>
+    <file>images/Pictogrammers-Material-File-File-outline.svg</file>
+    <file>images/Pictogrammers-Material-Arrow-Arrow-down-right-bold.svg</file>
+    <file>images/Pictogrammers-Material-Arrow-Arrow-down-left-bold.svg</file>
+    <file>images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Floppy.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Magnify.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Magnify-less.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Post-it.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Sign-info.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Sign-left.svg</file>
+    <file>images/Paomedia-Small-N-Flat-Sign-right.svg</file>
+    <file>images/pdf.ico</file>
+    <file>images/opened_folder.svg</file>
+  </qresource>
+</RCC>

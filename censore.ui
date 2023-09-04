@@ -1,0 +1,491 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CensoreDialog</class>
+ <widget class="QDialog" name="CensoreDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>620</width>
+    <height>457</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Деперсонификация данных в платежном документе КТК</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="resources.qrc">
+    <normaloff>:/icons/images/Paomedia-Small-N-Flat-Floppy.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Floppy.svg</iconset>
+  </property>
+  <property name="modal">
+   <bool>true</bool>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="sizeConstraint">
+    <enum>QLayout::SetFixedSize</enum>
+   </property>
+   <item>
+    <widget class="QGroupBox" name="grpCensore">
+     <property name="title">
+      <string>Деперсонификация данных</string>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout" stretch="3,5,4,4,3">
+      <property name="spacing">
+       <number>25</number>
+      </property>
+      <item alignment="Qt::AlignHCenter">
+       <widget class="QCheckBox" name="chkFIO">
+        <property name="text">
+         <string>ФИО</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item alignment="Qt::AlignHCenter">
+       <widget class="QCheckBox" name="chkAddr">
+        <property name="text">
+         <string>Адрес помещения</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item alignment="Qt::AlignHCenter">
+       <widget class="QCheckBox" name="chkPost">
+        <property name="text">
+         <string>Адрес доставки</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item alignment="Qt::AlignHCenter">
+       <widget class="QCheckBox" name="chkIPU">
+        <property name="text">
+         <string>Шапка ИПУ</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item alignment="Qt::AlignHCenter">
+       <widget class="QCheckBox" name="chkQR">
+        <property name="text">
+         <string>QR код</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grpFormat">
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>80</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>Формат нового файла/файлов</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_3">
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout1">
+        <property name="spacing">
+         <number>15</number>
+        </property>
+        <item alignment="Qt::AlignLeft">
+         <widget class="QRadioButton" name="rbtPDFjpeg">
+          <property name="text">
+           <string>Файл PDF из JPEG картинок</string>
+          </property>
+         </widget>
+        </item>
+        <item alignment="Qt::AlignHCenter">
+         <widget class="QRadioButton" name="rbtJPEG">
+          <property name="text">
+           <string>JPEG файлы</string>
+          </property>
+         </widget>
+        </item>
+        <item alignment="Qt::AlignRight">
+         <widget class="QRadioButton" name="rbtPNG">
+          <property name="text">
+           <string>PNG файлы</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grpPages">
+     <property name="title">
+      <string>Страницы</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_2">
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout2" stretch="2,3,0">
+        <property name="spacing">
+         <number>15</number>
+        </property>
+        <item>
+         <widget class="QRadioButton" name="rbtPgAll">
+          <property name="text">
+           <string>Все страницы</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="rbtPgCurr">
+          <property name="text">
+           <string>Только текущую страницу</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="rbtPgRange">
+          <property name="text">
+           <string>Указанные страницы</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QFormLayout" name="formLayout">
+        <item row="0" column="0">
+         <widget class="QLabel" name="lblPg">
+          <property name="text">
+           <string>Список страниц (примеры: 2-6,8,5,5,5,-10,7-):</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLineEdit" name="edtPages"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="chkSingles">
+        <property name="text">
+         <string>Каждую страницу сохранить в отдельном файле PDF</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grpRotation">
+     <property name="title">
+      <string>Поворот страниц</string>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout_4">
+      <item>
+       <widget class="QPushButton" name="btnOriginal">
+        <property name="text">
+         <string>Не менять</string>
+        </property>
+        <property name="icon">
+         <iconset resource="resources.qrc">
+          <normaloff>:/icons/images/Pictogrammers-Material-File-File-outline.svg</normaloff>
+          <normalon>:/icons/images/Pictogrammers-Material-File-File-outline_on.svg</normalon>:/icons/images/Pictogrammers-Material-File-File-outline.svg</iconset>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>20</width>
+          <height>20</height>
+         </size>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnLeft">
+        <property name="text">
+         <string>Повернуть влево</string>
+        </property>
+        <property name="icon">
+         <iconset resource="resources.qrc">
+          <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold.svg</normaloff>
+          <normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg</normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold.svg</iconset>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>20</width>
+          <height>20</height>
+         </size>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnRight">
+        <property name="text">
+         <string>Повернуть вправо</string>
+        </property>
+        <property name="icon">
+         <iconset resource="resources.qrc">
+          <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold.svg</normaloff>
+          <normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg</normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold.svg</iconset>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>20</width>
+          <height>20</height>
+         </size>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn180dg">
+        <property name="text">
+         <string>Перевернуть на 180°</string>
+        </property>
+        <property name="icon">
+         <iconset resource="resources.qrc">
+          <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold.svg</normaloff>
+          <normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg</normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold.svg</iconset>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>20</width>
+          <height>20</height>
+         </size>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grpJPEG">
+     <property name="title">
+      <string>Параметры графики</string>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="1,1">
+      <property name="spacing">
+       <number>30</number>
+      </property>
+      <item>
+       <layout class="QFormLayout" name="formLayout2">
+        <property name="formAlignment">
+         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+        </property>
+        <property name="horizontalSpacing">
+         <number>6</number>
+        </property>
+        <item row="0" column="0">
+         <widget class="QLabel" name="lblDPI">
+          <property name="text">
+           <string>Разрешение DPI:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QComboBox" name="cmbDPI">
+          <item>
+           <property name="text">
+            <string>100</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>150</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>200</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>300</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>600</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QFormLayout" name="formLayout1">
+        <property name="formAlignment">
+         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+        </property>
+        <property name="horizontalSpacing">
+         <number>6</number>
+        </property>
+        <item row="0" column="1">
+         <widget class="QWidget" name="wgSlider" native="true">
+          <layout class="QHBoxLayout" name="horizontalLayout_2">
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QSlider" name="SliderQuality">
+             <property name="minimum">
+              <number>30</number>
+             </property>
+             <property name="maximum">
+              <number>100</number>
+             </property>
+             <property name="singleStep">
+              <number>5</number>
+             </property>
+             <property name="value">
+              <number>100</number>
+             </property>
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblQualityVal">
+             <property name="text">
+              <string>100</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+             <property name="margin">
+              <number>3</number>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item row="0" column="0">
+         <widget class="QLabel" name="lblQuality">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>Качество:</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok|QDialogButtonBox::Save</set>
+     </property>
+     <property name="centerButtons">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources>
+  <include location="resources.qrc"/>
+ </resources>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>CensoreDialog</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>254</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>CensoreDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>SliderQuality</sender>
+   <signal>valueChanged(int)</signal>
+   <receiver>lblQualityVal</receiver>
+   <slot>setNum(int)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>152</x>
+     <y>207</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>237</x>
+     <y>204</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 24.0.2, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<svg version="1.1" id="qr-code-scan-2" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px"
+	 y="0px" width="800px" height="800px" viewBox="0 0 800 800" style="enable-background:new 0 0 800 800;" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:none;stroke:#000000;stroke-width:50;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:133.3333;}
+	.st1{stroke:#000000;stroke-width:50;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:133.3333;}
+</style>
+<rect x="233.3" y="233.3" class="st0" width="133.3" height="133.3"/>
+<rect x="500" y="233.3" class="st1" width="66.7" height="66.7"/>
+<rect x="433.3" y="433.3" class="st0" width="133.3" height="133.3"/>
+<rect x="233.3" y="500" class="st1" width="66.7" height="66.7"/>
+<path id="primary-2" class="st0" d="M266.7,100H133.3c-18.4,0-33.3,14.9-33.3,33.3v133.3"/>
+<path id="primary-3" class="st0" d="M700,266.7V133.3c0-18.4-14.9-33.3-33.3-33.3H533.3"/>
+<path id="primary-4" class="st0" d="M100,533.3v133.3c0,18.4,14.9,33.3,33.3,33.3h133.3"/>
+<path id="primary-5" class="st0" d="M533.3,700h133.3c18.4,0,33.3-14.9,33.3-33.3V533.3"/>
+</svg>

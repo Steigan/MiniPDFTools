@@ -1,0 +1,942 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1115</width>
+    <height>798</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Mini PDF Tools</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="resources.qrc">
+    <normaloff>:/icons/images/pdf.ico</normaloff>:/icons/images/pdf.ico</iconset>
+  </property>
+  <property name="unifiedTitleAndToolBarOnMac">
+   <bool>true</bool>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1115</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="contextMenuPolicy">
+     <enum>Qt::DefaultContextMenu</enum>
+    </property>
+    <property name="title">
+     <string>Файл</string>
+    </property>
+    <addaction name="actionNew"/>
+    <addaction name="actionOpen"/>
+    <addaction name="actionSaveAs"/>
+    <addaction name="actionClose"/>
+    <addaction name="separator"/>
+    <addaction name="actionQuit"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>Помощь</string>
+    </property>
+    <addaction name="actionAbout"/>
+   </widget>
+   <widget class="QMenu" name="menuView">
+    <property name="title">
+     <string>Просмотр</string>
+    </property>
+    <addaction name="actionZoom_In"/>
+    <addaction name="actionZoom_Out"/>
+    <addaction name="actionZoom_Normal"/>
+    <addaction name="separator"/>
+    <addaction name="actionHome"/>
+    <addaction name="actionPrevious_Page"/>
+    <addaction name="actionNext_Page"/>
+    <addaction name="actionEnd"/>
+    <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="menuTools">
+    <property name="title">
+     <string>Инструменты</string>
+    </property>
+    <widget class="QMenu" name="menuPDexport">
+     <property name="title">
+      <string>Экспорт реестра платежных документов КТК в XLSX</string>
+     </property>
+     <addaction name="actionPDexport"/>
+     <addaction name="actionPDexportQR"/>
+    </widget>
+    <widget class="QMenu" name="menuPageRotate">
+     <property name="title">
+      <string>Повернуть текущую страницу</string>
+     </property>
+     <addaction name="actionPageRotateLeft"/>
+     <addaction name="actionPageRotateRight"/>
+     <addaction name="actionPageRotate180"/>
+    </widget>
+    <widget class="QMenu" name="menuPagesRotate">
+     <property name="title">
+      <string>Повернуть все страницы</string>
+     </property>
+     <addaction name="actionPagesRotateLeft"/>
+     <addaction name="actionPagesRotateRight"/>
+     <addaction name="actionPagesRotate180"/>
+    </widget>
+    <widget class="QMenu" name="menuTablesAnalize">
+     <property name="title">
+      <string>Поиск таблиц (по рамкам) и экспорт данных в XLSX</string>
+     </property>
+     <addaction name="actionTablesAnalizeStrong"/>
+     <addaction name="actionTablesAnalizeSimple"/>
+    </widget>
+    <addaction name="menuPageRotate"/>
+    <addaction name="menuPagesRotate"/>
+    <addaction name="separator"/>
+    <addaction name="menuTablesAnalize"/>
+    <addaction name="menuPDexport"/>
+    <addaction name="actionCensore"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>Правка</string>
+    </property>
+    <addaction name="actionCbdRectTextCopy"/>
+    <addaction name="actionCbdRectTextTrimCopy"/>
+    <addaction name="separator"/>
+    <addaction name="actionCbdRectImageCopy"/>
+    <addaction name="actionCbdPageImageCopy"/>
+    <addaction name="separator"/>
+    <addaction name="actionRectRecognizeText"/>
+    <addaction name="actionRectRecognizeTextTrim"/>
+    <addaction name="separator"/>
+    <addaction name="actionRectRecognizeQR"/>
+    <addaction name="separator"/>
+    <addaction name="actionCbdRectsInfoCopy"/>
+    <addaction name="actionCbdRectsAllInfoCopy"/>
+    <addaction name="separator"/>
+    <addaction name="actionRectMode"/>
+    <addaction name="separator"/>
+    <addaction name="actionSelectAll"/>
+    <addaction name="actionRemoveSelection"/>
+    <addaction name="actionRemoveAllSelections"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuTools"/>
+   <addaction name="menuView"/>
+   <addaction name="menuHelp"/>
+  </widget>
+  <widget class="QToolBar" name="mainToolBar">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="windowTitle">
+    <string>Панель инструментов</string>
+   </property>
+   <property name="movable">
+    <bool>false</bool>
+   </property>
+   <property name="floatable">
+    <bool>false</bool>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionNew"/>
+   <addaction name="actionOpen"/>
+   <addaction name="actionSaveAs"/>
+   <addaction name="separator"/>
+   <addaction name="actionZoom_Out"/>
+   <addaction name="actionZoom_In"/>
+   <addaction name="separator"/>
+   <addaction name="actionPrevious_Page"/>
+   <addaction name="actionNext_Page"/>
+   <addaction name="separator"/>
+   <addaction name="actionPageRotateLeft"/>
+   <addaction name="actionPageRotateRight"/>
+   <addaction name="actionPageRotate180"/>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+  <action name="actionOpen">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/opened_folder.svg</normaloff>:/icons/images/opened_folder.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Открыть...</string>
+   </property>
+   <property name="toolTip">
+    <string>Открыть файл</string>
+   </property>
+   <property name="statusTip">
+    <string>Открыть файл</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="actionQuit">
+   <property name="icon">
+    <iconset theme="application-exit">
+     <normaloff>C:/Users/Igor2/.designer/backup</normaloff>C:/Users/Igor2/.designer/backup</iconset>
+   </property>
+   <property name="text">
+    <string>Выход</string>
+   </property>
+   <property name="statusTip">
+    <string>Выход</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Q</string>
+   </property>
+  </action>
+  <action name="actionAbout">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-info.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-info.svg</iconset>
+   </property>
+   <property name="text">
+    <string>О программе</string>
+   </property>
+   <property name="toolTip">
+    <string>Информация о программе</string>
+   </property>
+   <property name="statusTip">
+    <string>Информация о программе</string>
+   </property>
+  </action>
+  <action name="actionZoom_In">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Magnify.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Magnify.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Увеличить</string>
+   </property>
+   <property name="toolTip">
+    <string>Увеличить масштаб</string>
+   </property>
+   <property name="statusTip">
+    <string>Увеличить масштаб</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+=</string>
+   </property>
+  </action>
+  <action name="actionZoom_Out">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Magnify-less.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Magnify-less.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Уменьшить</string>
+   </property>
+   <property name="toolTip">
+    <string>Уменьшить масштаб</string>
+   </property>
+   <property name="statusTip">
+    <string>Уменьшить масштаб</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+-</string>
+   </property>
+  </action>
+  <action name="actionPrevious_Page">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-left.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-left.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Предыдущая</string>
+   </property>
+   <property name="toolTip">
+    <string>Предыдущая страница</string>
+   </property>
+   <property name="statusTip">
+    <string>Предыдущая страница</string>
+   </property>
+   <property name="shortcut">
+    <string>PgUp</string>
+   </property>
+  </action>
+  <action name="actionNext_Page">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-right.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-right.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Следующая</string>
+   </property>
+   <property name="toolTip">
+    <string>Следующая страница</string>
+   </property>
+   <property name="statusTip">
+    <string>Следующая страница</string>
+   </property>
+   <property name="shortcut">
+    <string>PgDown</string>
+   </property>
+  </action>
+  <action name="actionHome">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-up.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-up.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Первая</string>
+   </property>
+   <property name="toolTip">
+    <string>Первая страница</string>
+   </property>
+   <property name="statusTip">
+    <string>Первая страница</string>
+   </property>
+   <property name="shortcut">
+    <string>Home</string>
+   </property>
+  </action>
+  <action name="actionEnd">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-down.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Sign-down.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Последняя</string>
+   </property>
+   <property name="toolTip">
+    <string>Последняя страница</string>
+   </property>
+   <property name="statusTip">
+    <string>Последняя страница</string>
+   </property>
+   <property name="shortcut">
+    <string>End</string>
+   </property>
+  </action>
+  <action name="actionSaveAs">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Floppy.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Floppy.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Сохранить как...</string>
+   </property>
+   <property name="toolTip">
+    <string>Сохранить как другой файл/серию файлов</string>
+   </property>
+   <property name="statusTip">
+    <string>Сохранить как другой файл/серию файлов</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
+  </action>
+  <action name="actionClose">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Закрыть</string>
+   </property>
+   <property name="toolTip">
+    <string>Закрыть файл</string>
+   </property>
+   <property name="statusTip">
+    <string>Закрыть файл</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F4</string>
+   </property>
+  </action>
+  <action name="actionPDexport">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/puzzle.svg</normaloff>:/icons/images/puzzle.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Без данных из QR кодов</string>
+   </property>
+   <property name="iconText">
+    <string>Экспорт реестра платежных документов КТК в XLSX без анализа QR кодов</string>
+   </property>
+   <property name="toolTip">
+    <string>Экспорт реестра платежных документов КТК в XLSX без анализа QR кодов</string>
+   </property>
+   <property name="statusTip">
+    <string>Экспорт реестра платежных документов КТК в XLSX без анализа QR кодов</string>
+   </property>
+  </action>
+  <action name="actionPDexportQR">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/puzzle.svg</normaloff>:/icons/images/puzzle.svg</iconset>
+   </property>
+   <property name="text">
+    <string>С данными из QR кодов</string>
+   </property>
+   <property name="iconText">
+    <string>Экспорт реестра платежных документов КТК в XLSX с анализом QR кодов</string>
+   </property>
+   <property name="toolTip">
+    <string>Экспорт реестра платежных документов КТК в XLSX с анализом QR кодов</string>
+   </property>
+   <property name="statusTip">
+    <string>Экспорт реестра платежных документов КТК в XLSX с анализом QR кодов</string>
+   </property>
+  </action>
+  <action name="actionCensore">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/puzzle.svg</normaloff>:/icons/images/puzzle.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Деперсонификация платежных документов КТК</string>
+   </property>
+   <property name="toolTip">
+    <string>Деперсонификация платежных документов КТК</string>
+   </property>
+   <property name="statusTip">
+    <string>Деперсонификация платежных документов КТК</string>
+   </property>
+  </action>
+  <action name="actionCbdPageImageCopy">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/file-picture.svg</normaloff>:/icons/images/file-picture.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Копировать изображение всей страницы</string>
+   </property>
+   <property name="toolTip">
+    <string>Копировать изображение всей страницы в системный буфер</string>
+   </property>
+   <property name="statusTip">
+    <string>Копировать изображение всей страницы в системный буфер</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+P</string>
+   </property>
+  </action>
+  <action name="actionCbdRectImageCopy">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/file-picture.svg</normaloff>:/icons/images/file-picture.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Копировать изображение выделенного участка</string>
+   </property>
+   <property name="toolTip">
+    <string>Копировать выделенный участок как изображение в системный буфер</string>
+   </property>
+   <property name="statusTip">
+    <string>Копировать выделенный участок как изображение в системный буфер</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+P</string>
+   </property>
+  </action>
+  <action name="actionCbdRectTextCopy">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Post-it.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Post-it.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Копировать текст из выделенного участка</string>
+   </property>
+   <property name="toolTip">
+    <string>Копировать текст из текстового слоя выделенного участка в системный буфер</string>
+   </property>
+   <property name="statusTip">
+    <string>Копировать текст из текстового слоя выделенного участка в системный буфер</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+C</string>
+   </property>
+  </action>
+  <action name="actionZoom_Normal">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Magnify-normal.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Magnify-normal.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Установить 100%</string>
+   </property>
+   <property name="toolTip">
+    <string>Установить 100%</string>
+   </property>
+   <property name="statusTip">
+    <string>Установить 100%</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+0</string>
+   </property>
+  </action>
+  <action name="actionRemoveSelection">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/CloseCross.svg</normaloff>:/icons/images/CloseCross.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Отменить веделение</string>
+   </property>
+   <property name="toolTip">
+    <string>Отменить активное веделение</string>
+   </property>
+   <property name="statusTip">
+    <string>Отменить активное веделение</string>
+   </property>
+   <property name="shortcut">
+    <string>Del</string>
+   </property>
+  </action>
+  <action name="actionRemoveAllSelections">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Close2Cross.svg</normaloff>:/icons/images/Close2Cross.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Отменить все веделения</string>
+   </property>
+   <property name="toolTip">
+    <string>Отменить все веделения</string>
+   </property>
+   <property name="statusTip">
+    <string>Отменить все веделения</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Del</string>
+   </property>
+  </action>
+  <action name="actionCbdRectsInfoCopy">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/RulePencil.svg</normaloff>:/icons/images/RulePencil.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Копировать информацию о выделенных участках</string>
+   </property>
+   <property name="toolTip">
+    <string>Копировать информацию о выделенных участках в системный буфер</string>
+   </property>
+   <property name="statusTip">
+    <string>Копировать информацию о выделенных участках в системный буфер</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+I</string>
+   </property>
+  </action>
+  <action name="actionNew">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/file-text.svg</normaloff>:/icons/images/file-text.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Создать...</string>
+   </property>
+   <property name="toolTip">
+    <string>Создать сборку из разных файлов</string>
+   </property>
+   <property name="statusTip">
+    <string>Создать сборку из разных файлов</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
+   </property>
+  </action>
+  <action name="actionCbdRectsAllInfoCopy">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/RulePencil.svg</normaloff>:/icons/images/RulePencil.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Копировать информацию о всех выделенных участках</string>
+   </property>
+   <property name="toolTip">
+    <string>Копировать информацию о всех выделенных участках в системный буфер</string>
+   </property>
+   <property name="statusTip">
+    <string>Копировать информацию о всех выделенных участках в системный буфер</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+I</string>
+   </property>
+  </action>
+  <action name="actionRectMode">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/pin.svg</normaloff>:/icons/images/pin.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Переключить область действия выделения: на всех сраницах / только на текущей</string>
+   </property>
+   <property name="toolTip">
+    <string>Переключить область действия выделения: на всех сраницах / только на текущей</string>
+   </property>
+   <property name="statusTip">
+    <string>Переключить область действия выделения: на всех сраницах / только на текущей</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+G</string>
+   </property>
+  </action>
+  <action name="actionRectRecognizeText">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/notepad.svg</normaloff>:/icons/images/notepad.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Распознать и копировать текст из выделенного участка изображения</string>
+   </property>
+   <property name="toolTip">
+    <string>Распознать и копировать в системный буфер текст из выделенного участка изображения</string>
+   </property>
+   <property name="statusTip">
+    <string>Распознать и копировать в системный буфер текст из выделенного участка изображения</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+X</string>
+   </property>
+  </action>
+  <action name="actionRectRecognizeTextTrim">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/notepad.svg</normaloff>:/icons/images/notepad.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Распознать, очистить и копировать текст из выделенного участка изображения</string>
+   </property>
+   <property name="toolTip">
+    <string>Распознать, очистить и копировать в системный буфер текст из выделенного участка изображения</string>
+   </property>
+   <property name="statusTip">
+    <string>Распознать, очистить и копировать в системный буфер текст из выделенного участка изображения</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+X</string>
+   </property>
+  </action>
+  <action name="actionPageRotateLeft">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg</normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Повернуть страницу влево</string>
+   </property>
+   <property name="toolTip">
+    <string>Повернуть страницу влево</string>
+   </property>
+   <property name="statusTip">
+    <string>Повернуть страницу влево</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+L</string>
+   </property>
+  </action>
+  <action name="actionPageRotateRight">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg</normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Повернуть страницу вправо</string>
+   </property>
+   <property name="toolTip">
+    <string>Повернуть страницу вправо</string>
+   </property>
+   <property name="statusTip">
+    <string>Повернуть страницу вправо</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
+   </property>
+  </action>
+  <action name="actionPageRotate180">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg</normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Повернуть страницу на 180 градусов</string>
+   </property>
+   <property name="toolTip">
+    <string>Повернуть страницу на 180 градусов</string>
+   </property>
+   <property name="statusTip">
+    <string>Повернуть страницу на 180 градусов</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+U</string>
+   </property>
+  </action>
+  <action name="actionPagesRotateLeft">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg</normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Повернуть все страницы влево</string>
+   </property>
+   <property name="toolTip">
+    <string>Повернуть все страницы влево</string>
+   </property>
+   <property name="statusTip">
+    <string>Повернуть все страницы влево</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+L</string>
+   </property>
+  </action>
+  <action name="actionPagesRotateRight">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg</normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Повернуть все страницы вправо</string>
+   </property>
+   <property name="toolTip">
+    <string>Повернуть все страницы вправо</string>
+   </property>
+   <property name="statusTip">
+    <string>Повернуть все страницы вправо</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+R</string>
+   </property>
+  </action>
+  <action name="actionPagesRotate180">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg</normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Повернуть все страницы на 180 градусов</string>
+   </property>
+   <property name="toolTip">
+    <string>Повернуть все страницы на 180 градусов</string>
+   </property>
+   <property name="statusTip">
+    <string>Повернуть все страницы на 180 градусов</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+U</string>
+   </property>
+  </action>
+  <action name="actionRectRecognizeQR">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/qr-code.svg</normaloff>:/icons/images/qr-code.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Распознать QR-код/коды из выделенного участка изображения и копировать данные</string>
+   </property>
+   <property name="toolTip">
+    <string>Распознать QR-код/коды из выделенного участка изображения и копировать данные в системный буфер</string>
+   </property>
+   <property name="statusTip">
+    <string>Распознать QR-код/коды из выделенного участка изображения и копировать данные в системный буфер</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+D</string>
+   </property>
+  </action>
+  <action name="actionSelectAll">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/select_all.svg</normaloff>:/icons/images/select_all.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Выделить всю страницу</string>
+   </property>
+   <property name="toolTip">
+    <string>Выделить всю страницу</string>
+   </property>
+   <property name="statusTip">
+    <string>Выделить всю страницу</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+A</string>
+   </property>
+  </action>
+  <action name="actionCbdRectTextTrimCopy">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/Paomedia-Small-N-Flat-Post-it.svg</normaloff>:/icons/images/Paomedia-Small-N-Flat-Post-it.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Копировать очищенный текст из выделенного участка</string>
+   </property>
+   <property name="toolTip">
+    <string>Копировать очищенный от лишних пробелов и переносов строк текст из текстового слоя выделенного участка в системный буфер</string>
+   </property>
+   <property name="statusTip">
+    <string>Копировать очищенный от лишних пробелов и переносов строк текст из текстового слоя выделенного участка в системный буфер</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Alt+C</string>
+   </property>
+  </action>
+  <action name="actionTablesAnalizeStrong">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/puzzle.svg</normaloff>:/icons/images/puzzle.svg</iconset>
+   </property>
+   <property name="text">
+    <string>С учетом структуры найденных таблиц</string>
+   </property>
+   <property name="toolTip">
+    <string>С попыткой учета объединенных ячеек, промежутков между таблицами и т.п.</string>
+   </property>
+   <property name="statusTip">
+    <string>С попыткой учета объединенных ячеек, промежутков между таблицами и т.п.</string>
+   </property>
+  </action>
+  <action name="actionTablesAnalizeSimple">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/puzzle.svg</normaloff>:/icons/images/puzzle.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Простая &quot;шинковка&quot; на строки и столбцы</string>
+   </property>
+   <property name="toolTip">
+    <string>Возможны артефакты, задвоения и т.п.</string>
+   </property>
+   <property name="statusTip">
+    <string>Возможны артефакты, задвоения и т.п.</string>
+   </property>
+  </action>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <resources>
+  <include location="resources.qrc"/>
+ </resources>
+ <connections/>
+</ui>

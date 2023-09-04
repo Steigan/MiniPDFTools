@@ -1,0 +1,6 @@
+Pillow
+pyside2
+PyMuPDF
+XlsxWriter
+pyzbar
+pytesseract
