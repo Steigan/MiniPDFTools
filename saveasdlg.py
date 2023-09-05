@@ -1,8 +1,9 @@
-from PySide2.QtWidgets import (QDialog, QFileDialog, QMessageBox, QDialogButtonBox)
+from PySide2.QtWidgets import QDialog, QFileDialog, QMessageBox, QDialogButtonBox
 from PySide2.QtCore import Signal, Slot, QSettings, QRegularExpression
 from PySide2.QtGui import QRegularExpressionValidator
 from saveas_ui import Ui_SaveAsDialog
 import enum
+
 
 class FileFormat(enum.IntEnum):
     fmtPDF = 0
@@ -10,10 +11,12 @@ class FileFormat(enum.IntEnum):
     fmtJPEG = 2
     fmtPNG = 3
 
+
 class PageMode(enum.IntEnum):
     pgAll = 0
     pgCurrent = 1
     pgRange = 2
+
 
 class PageRotation(enum.IntEnum):
     rtNone = 0
@@ -21,7 +24,8 @@ class PageRotation(enum.IntEnum):
     rtRight = 2
     rt180 = 3
 
-class SaveParams():
+
+class SaveParams:
     def __init__(self):
         # self.format = FileFormat.fmtPDFjpeg
         # self.pgmode = PageMode.pgCurrent
@@ -40,7 +44,7 @@ class SaveParams():
             self.pgmode = PageMode(int(settings.value('pgmode', '0')))
             # self.rotation = PageRotation(int(settings.value('rotation', '0')))
             self.rotation = PageRotation.rtNone
-        except:
+        except Exception:
             self.format = FileFormat.fmtPDF
             self.format_censore = FileFormat.fmtPDFjpeg
             self.pgmode = PageMode.pgAll
@@ -60,7 +64,7 @@ class SaveParams():
         self.censore = 0
         # self.valueToBool(settings.value('censore', False))
         self.setselectionsonly = False
-        
+
     # def load_params(self):
     #     pass
 
@@ -87,6 +91,7 @@ class SaveParams():
     def valueToBool(value):
         return value.lower() == 'true' if isinstance(value, str) else bool(value)
 
+
 class SaveAsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -97,10 +102,10 @@ class SaveAsDialog(QDialog):
 
         self.m_currentParams = SaveParams()
         # self.m_currentParams.load_params()
-        
+
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Save).setText('Сохранить')
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText('Отмена')
-        
+
         if self.m_currentParams.format == FileFormat.fmtPDF:
             self.ui.rbtPDF.setChecked(True)
         elif self.m_currentParams.format == FileFormat.fmtPDFjpeg:
@@ -124,13 +129,13 @@ class SaveAsDialog(QDialog):
         self.ui.chkSingles.setChecked(self.m_currentParams.singles)
 
         self.rotation_checked(self.m_currentParams.rotation)
-        
+
         self.ui.cmbDPI.setCurrentText(str(self.m_currentParams.dpi))
         self.ui.SliderQuality.setValue(self.m_currentParams.quality)
 
         # self.ui.chkCensore.setChecked(self.m_currentParams.censore)
         self.ui.cmbCensore.setCurrentIndex(self.m_currentParams.censore)
-        
+
         self.resize(self.minimumSizeHint())
 
     ############################################
@@ -201,8 +206,9 @@ class SaveAsDialog(QDialog):
         fl_rng = m_pgmode == PageMode.pgRange
         self.ui.lblPg.setEnabled(fl_rng)
         self.ui.edtPages.setEnabled(fl_rng)
-        self.ui.chkSingles.setEnabled(self.m_currentParams.format in (FileFormat.fmtPDF, FileFormat.fmtPDFjpeg) \
-            and m_pgmode != PageMode.pgCurrent)
+        self.ui.chkSingles.setEnabled(
+            self.m_currentParams.format in (FileFormat.fmtPDF, FileFormat.fmtPDFjpeg) and m_pgmode != PageMode.pgCurrent
+        )
 
     @Slot()
     def on_rbtPgAll_clicked(self):

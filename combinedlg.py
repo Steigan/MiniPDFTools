@@ -1,14 +1,15 @@
-from PySide2.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog)
+from PySide2.QtWidgets import QDialog, QDialogButtonBox, QFileDialog
 from PySide2.QtCore import Signal, Slot, QItemSelectionModel, QSettings
 from combine_ui import Ui_CombineDialog
 import os
+
 
 class CombineDialog(QDialog):
     def __init__(self, parent=None, filelist=[], validExtensions=[]):
         super().__init__(parent)
         self.ui = Ui_CombineDialog()
         self.ui.setupUi(self)
-        
+
         self.m_validExtensions = validExtensions
         settings = QSettings('Steigan', 'Mini PDF Tools')
         self.m_lastfn = settings.value('lastfilename', '')
@@ -16,7 +17,7 @@ class CombineDialog(QDialog):
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Ok).clicked.connect(self.accept)
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText('  Создать  ')
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText('  Отмена  ')
-        
+
         for fl in filelist:
             self.ui.lstFiles.addItem(fl)
 
@@ -31,7 +32,7 @@ class CombineDialog(QDialog):
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat('text/uri-list'):
             event.acceptProposedAction()
-        
+
     def dropEvent(self, event):
         url_list = event.mimeData().urls()
         for url in url_list:
@@ -43,8 +44,12 @@ class CombineDialog(QDialog):
     @Slot()
     def on_btnAdd_clicked(self):
         directory = os.path.dirname(self.m_lastfn)
-        to_open, _ = QFileDialog.getOpenFileNames(self, "Выберите файлы PDF",
-            directory, f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in self.m_validExtensions).strip()})")
+        to_open, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Выберите файлы PDF",
+            directory,
+            f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in self.m_validExtensions).strip()})",
+        )
 
         if to_open:
             self.m_lastfn = to_open[0]
@@ -56,7 +61,7 @@ class CombineDialog(QDialog):
     @Slot()
     def on_btnRemove_clicked(self):
         ind = self.ui.lstFiles.selectedIndexes()[0].row()
-        itm = self.ui.lstFiles.takeItem(ind)
+        self.ui.lstFiles.takeItem(ind)
         self.on_lstFiles_itemSelectionChanged()
 
     @Slot()

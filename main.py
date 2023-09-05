@@ -1,7 +1,8 @@
 # Copyright (C) 2022 The Qt Company Ltd.
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
-import sys, os
+import sys
+import os
 from argparse import ArgumentParser, RawTextHelpFormatter
 
 from PySide2.QtWidgets import QApplication
@@ -10,13 +11,10 @@ from PySide2.QtCore import QCoreApplication, QUrl
 from mainwindow import MainWindow
 
 # apt-get install qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools tesseract-ocr tesseract-ocr-rus
-# 
 
 if __name__ == "__main__":
-    argument_parser = ArgumentParser(description="Mini PDF Tools",
-                                     formatter_class=RawTextHelpFormatter)
-    argument_parser.add_argument("file", help="The file(s) to open",
-                                 nargs='*', type=str)
+    argument_parser = ArgumentParser(description="Mini PDF Tools", formatter_class=RawTextHelpFormatter)
+    argument_parser.add_argument("file", help="The file(s) to open", nargs='*', type=str)
     options = argument_parser.parse_args()
 
     a = QApplication(sys.argv)

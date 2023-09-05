@@ -3,7 +3,7 @@
 -------------------------------
 Комплект виджетов для просмотра PDF-файла с возможностью выделения областей,
 их копирования в буфер и т.п.
- 
+
 Заметки
 =======
 * Версия от 05.04.2023 (c) 2023 **Igor Stepanenkov**
@@ -14,21 +14,54 @@
 * PyMuPDF
 """
 
-from PySide2.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel, QSlider, QInputDialog,
-                               QMainWindow, QMessageBox, QScrollArea, QComboBox, QLineEdit,
-                               QSizePolicy, QFrame, QWidget, QVBoxLayout, QHBoxLayout)
-from PySide2.QtGui import (QColorSpace, QGuiApplication, QImage,
-                           QImageReader, QImageWriter, QKeySequence,
-                           QPalette, QPainter, QPixmap, QColor, QPen, QBrush,
-                           QPaintEvent, QResizeEvent, QWheelEvent,
-                           QMouseEvent, QKeyEvent, QClipboard)
-from PySide2.QtCore import Qt, Signal, Slot, QRect, QRectF, QPoint # QDir, QStandardPaths, 
-import re, fitz, pytesseract
+from PySide2.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QLabel,
+    QSlider,
+    QInputDialog,
+    QMainWindow,
+    QMessageBox,
+    QScrollArea,
+    QComboBox,
+    QLineEdit,
+    QSizePolicy,
+    QFrame,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+)
+from PySide2.QtGui import (
+    QColorSpace,
+    QGuiApplication,
+    QImage,
+    QImageReader,
+    QImageWriter,
+    QKeySequence,
+    QPalette,
+    QPainter,
+    QPixmap,
+    QColor,
+    QPen,
+    QBrush,
+    QPaintEvent,
+    QResizeEvent,
+    QWheelEvent,
+    QMouseEvent,
+    QKeyEvent,
+    QClipboard,
+)
+from PySide2.QtCore import Qt, Signal, Slot, QRect, QRectF, QPoint  # QDir, QStandardPaths,
+import re
+import fitz
+import pytesseract
 from PIL import ImageQt, ImageOps
 from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
-def InfoMsgBox(parent, title:str, text:str):
+
+def InfoMsgBox(parent, title: str, text: str):
     m_MsgBox = QMessageBox(parent)
     m_MsgBox.setIcon(QMessageBox.Icon.Information)
     m_MsgBox.setWindowTitle(title)
@@ -38,13 +71,14 @@ def InfoMsgBox(parent, title:str, text:str):
     m_MsgBox.setText(text)
     m_MsgBox.exec()
 
-class selectionRect():
-    """Класс для хранения данных о выделенных областях
-    """    
+
+class selectionRect:
+    """Класс для хранения данных о выделенных областях"""
+
     def __init__(self, pno=-1):
         self.pno = pno
-        self.r = QRect(0,0,0,0)
-        self.rF = QRectF(0.,0.,0.,0.)
+        self.r = QRect(0, 0, 0, 0)
+        self.rF = QRectF(0.0, 0.0, 0.0, 0.0)
         self.enabled = True
         # self.selected = False
 
@@ -53,12 +87,11 @@ class selectionRect():
 
         Returns:
             QRect: выделенная область
-        """        
+        """
         return self.r
 
     def normalize(self):
-        """Нормализовать экранные размеры выделенной области
-        """
+        """Нормализовать экранные размеры выделенной области"""
         # Косяк в PySide2
         # self.r = self.r.normalized()
         # x1, y1, x2, y2 = self.r.getCoords()
@@ -89,13 +122,13 @@ class selectionRect():
             scr_h (int): экранная высота страницы
             eth_w (int): ширина эталлоной страницы
             eth_h (int): высота эталлоной страницы
-        """        
+        """
         self.normalize()
         self.rF.setX(self.r.x() * eth_w / scr_w)
         self.rF.setY(self.r.y() * eth_h / scr_h)
         self.rF.setWidth((self.r.width() + 1) * eth_w / scr_w)
         self.rF.setHeight((self.r.height() + 1) * eth_h / scr_h)
-        
+
         # print(self.r, scr_w, scr_h, self.rF, eth_w, eth_h)
 
     def update_r(self, scr_w: int, scr_h: int, eth_w: int, eth_h: int, check_size=False):
@@ -114,7 +147,7 @@ class selectionRect():
             # if not QRectF(0, 0, eth_w, eth_h).contains(self.rF):
             #     return False
             self.enabled = QRectF(0, 0, eth_w, eth_h).contains(self.rF)
-                
+
         self.r.setX(round(self.rF.x() * scr_w / eth_w))
         self.r.setY(round(self.rF.y() * scr_h / eth_h))
         self.r.setWidth(round((self.rF.x() + self.rF.width()) * scr_w / eth_w) - self.r.x() - 1)
@@ -134,14 +167,14 @@ class selectionRect():
         Returns:
             QRect: масштабированная прямоугольная область
         """
-        m_r = QRect()        
+        m_r = QRect()
         m_r.setX(round(self.rF.x() * new_w / eth_w))
         m_r.setY(round(self.rF.y() * new_h / eth_h))
         m_r.setWidth(round(self.rF.width() * new_w / eth_w))
         m_r.setHeight(round(self.rF.height() * new_h / eth_h))
         return m_r
 
-    def setX1Y1X2Y2(self, pt1:QPoint, pt2:QPoint):
+    def setX1Y1X2Y2(self, pt1: QPoint, pt2: QPoint):
         """Установить параметры экранного QRect исходя их координат двух переданных точек
         ("эталонный" QRect не пересчитывается)
 
@@ -156,7 +189,7 @@ class selectionRect():
 
         Returns:
             int: координата X
-        """        
+        """
         return self.r.x()
 
     def y1(self):
@@ -164,7 +197,7 @@ class selectionRect():
 
         Returns:
             int: координата Y
-        """        
+        """
         return self.r.y()
 
     def x2(self):
@@ -172,7 +205,7 @@ class selectionRect():
 
         Returns:
             int: координата X
-        """        
+        """
         return self.r.x() + self.r.width()
 
     def y2(self):
@@ -180,7 +213,7 @@ class selectionRect():
 
         Returns:
             int: координата Y
-        """        
+        """
         return self.r.y() + self.r.height()
 
     def isNull(self):
@@ -188,13 +221,14 @@ class selectionRect():
 
         Returns:
             bool: признак соответствия минимально допустимому размеру
-        """        
+        """
         return abs(self.rF.width()) < 15 or abs(self.rF.height()) < 15
 
     def dirRect(self, pt: QPoint):
-        """Получить номер угла выделенной области, находящийся в зоне "досягаемости" указанной точки (1, 3, 7, 9),
-        или идентификатор иного участка области/экрана (5 - внутри области, 0 - за пределами области или область disabled)
-        
+        """Получить номер угла выделенной области, находящийся в зоне "досягаемости"
+        указанной точки (1, 3, 7, 9), или идентификатор иного участка области/экрана
+        (5 - внутри области, 0 - за пределами области или область disabled)
+
         1 - 3 - 3
 
         4 - 5 - 6
@@ -206,7 +240,7 @@ class selectionRect():
 
         Returns:
             int: идентификатор угла выделенной области или иного участка области/экрана
-        """        
+        """
         # self.normalize()
         if not self.enabled:
             return 0
@@ -214,25 +248,25 @@ class selectionRect():
         xc = (self.x1() + self.x2()) // 2
         yc = (self.y1() + self.y2()) // 2
         offs = 4
-        if r.x() - offs < pt.x() < r.x() + offs: # левая сторона
-            if r.y() - offs < pt.y() < r.y() + offs: # верхняя сторона
+        if r.x() - offs < pt.x() < r.x() + offs:  # левая сторона
+            if r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
                 return 1
-            elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1: # нижняя сторона
+            elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
                 return 7
-            elif yc - offs < pt.y() < yc + offs: # середина по вертикали
+            elif yc - offs < pt.y() < yc + offs:  # середина по вертикали
                 return 4
-        elif r.right() - offs + 1 < pt.x() < r.right() + offs + 1: # правая сторона
-            if r.y() - offs < pt.y() < r.y() + offs: # верхняя сторона
+        elif r.right() - offs + 1 < pt.x() < r.right() + offs + 1:  # правая сторона
+            if r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
                 return 3
-            elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1: # нижняя сторона
+            elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
                 return 9
-            elif yc - offs < pt.y() < yc + offs: # середина по вертикали
+            elif yc - offs < pt.y() < yc + offs:  # середина по вертикали
                 return 6
-        elif r.y() - offs < pt.y() < r.y() + offs: # верхняя сторона
-            if xc - offs < pt.x() < xc + offs: # середина по горизонтали
+        elif r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
+            if xc - offs < pt.x() < xc + offs:  # середина по горизонтали
                 return 2
-        elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1: # нижняя сторона
-            if xc - offs < pt.x() < xc + offs: # середина по горизонтали
+        elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
+            if xc - offs < pt.x() < xc + offs:  # середина по горизонтали
                 return 8
 
         if r.contains(pt):
@@ -249,7 +283,7 @@ class selectionRect():
 
         Returns:
             int, int: смещения по X и Y из-за перемещения области обратно на страницу
-        """        
+        """
         dx = min(self.x1(), self.x2(), 0)
         if not dx:
             dx = max(self.x1() - (w - 1), self.x2() - (w - 1), 0)
@@ -272,7 +306,7 @@ class selectionRect():
 
         Returns:
             SelectionRect: этот объект
-        """        
+        """
         self.normalize()
         if shft:
             if self.r.width() + offs > 10:
@@ -294,37 +328,38 @@ class selectionRect():
 
         Returns:
             SelectionRect: этот объект
-        """        
+        """
         self.normalize()
         if shft:
             if self.r.height() + offs > 10:
                 self.r.setHeight(min(self.r.height() + offs, h - self.y1() - 1))
         else:
-            self.r.moveTop(self.r.top() + offs)        
+            self.r.moveTop(self.r.top() + offs)
             dx, dy = self.adjustPosition(w, h)
         return self
 
 
 class zoomSlider(QSlider):
-    """Виджет слайдера для выбора масштаба просмотра страницы
-    """
+    """Виджет слайдера для выбора масштаба просмотра страницы"""
+
     zoomSliderDoubleClicked = Signal()
-    
+
     def __init__(self, parent):
         super().__init__(parent)
 
     def mouseDoubleClickEvent(self, event):
         self.zoomSliderDoubleClicked.emit()
 
+
 class zoomSelector(QWidget):
-    """Виджет выбора масштаба просмотра страницы (на основе слайдера)
-    """
+    """Виджет выбора масштаба просмотра страницы (на основе слайдера)"""
+
     zoomFactorChanged = Signal(float)
 
     def __init__(self, parent):
         super().__init__(parent)
         self.setFixedWidth(190)
-        
+
         self.passemit = False
 
         self.horizontalLayout = QHBoxLayout(self)
@@ -338,7 +373,7 @@ class zoomSelector(QWidget):
         # self.Slider.setTickInterval(100)
         # self.Slider.setTickPosition(QSlider.TickPosition.TicksBothSides)
         self.Slider.setOrientation(Qt.Horizontal)
-        
+
         # self.lblValue = QLabel(self)
         self.lblValue = QLineEdit(self)
         self.lblValue.setFixedWidth(45)
@@ -347,12 +382,12 @@ class zoomSelector(QWidget):
         self.lblValue.setReadOnly(True)
         self.horizontalLayout.addWidget(self.Slider)
         self.horizontalLayout.addWidget(self.lblValue)
-        
+
         self.Slider.valueChanged.connect(self.valueChanged)
         self.Slider.zoomSliderDoubleClicked.connect(self.reset)
         self.lblValue.setEnabled(False)
         self.Slider.setEnabled(False)
-        
+
     @Slot(float)
     def setZoomFactor(self, zoomFactor: float):
         self.passemit = True
@@ -371,17 +406,18 @@ class zoomSelector(QWidget):
         self.passemit = False
 
     @Slot(bool)
-    def setDisabled (self, fl: bool):
+    def setDisabled(self, fl: bool):
         self.setEnabled(not fl)
 
     @Slot(bool)
-    def setEnabled (self, fl: bool):
+    def setEnabled(self, fl: bool):
         self.lblValue.setEnabled(fl)
         self.Slider.setEnabled(fl)
 
+
 class zoomSelectorCB(QComboBox):
-    """Виджет выбора масштаба просмотра страницы (на основе комбобокса)
-    """
+    """Виджет выбора масштаба просмотра страницы (на основе комбобокса)"""
+
     zoomFactorChanged = Signal(float)
 
     def __init__(self, parent):
@@ -436,8 +472,8 @@ class zoomSelectorCB(QComboBox):
 
 
 class siaPdfView(QScrollArea):
-    """Виджет-основная прокручиваемая область просмотра
-    """
+    """Виджет-основная прокручиваемая область просмотра"""
+
     currentPageChanged = Signal(int)
     zoomFactorChanged = Signal(float)
     rectSelected = Signal(bool)
@@ -461,10 +497,10 @@ class siaPdfView(QScrollArea):
         self._eth_w = 0
         self._eth_h = 0
 
-        self.selectionPoint1 = QPoint(0,0)
-        self.selectionPoint2 = QPoint(0,0)
-        self.movePoint = QPoint(0,0)
-        
+        self.selectionPoint1 = QPoint(0, 0)
+        self.selectionPoint2 = QPoint(0, 0)
+        self.movePoint = QPoint(0, 0)
+
         self.selectedRect = -1
         self.selectionsMax = 10000
         self.selections = []
@@ -472,7 +508,7 @@ class siaPdfView(QScrollArea):
 
         self.move_mode = 0
         # self.mousePos = QPoint(0, 0)
-        
+
         self.setBackgroundRole(QPalette.ColorRole.Dark)
         self.setFrameStyle(QFrame.NoFrame)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -481,15 +517,13 @@ class siaPdfView(QScrollArea):
 
         self._container = containerWidget(self)
         self._container.setBackgroundRole(QPalette.ColorRole.Dark)
-        self._container.setSizePolicy(QSizePolicy.Ignored,
-                                       QSizePolicy.Ignored)
+        self._container.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self._container.setFixedSize(50, 50)
         self._container.move(0, 0)
 
         self._pageimage = pageWidget(self._container, self)
         self._pageimage.setBackgroundRole(QPalette.ColorRole.Base)
-        self._pageimage.setSizePolicy(QSizePolicy.Ignored,
-                                       QSizePolicy.Ignored)
+        self._pageimage.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self._pageimage.setScaledContents(True)
 
         self._container.setWidget(self._pageimage)
@@ -498,20 +532,21 @@ class siaPdfView(QScrollArea):
         self._container.setMouseTracking(True)
         self._pageimage.setMouseTracking(True)
         self._container.setVisible(False)
-        
+
         self.scrollRequested.connect(self.scrollPointToPoint)
 
     def combine(self, filelist: list):
         m_MsgBox = QMessageBox(self)
         m_MsgBox.setIcon(QMessageBox.Icon.Question)
         m_MsgBox.setWindowTitle("Ошибка открытия файла")
-        m_MsgBox.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.YesToAll |
-                                    QMessageBox.StandardButton.Cancel)
+        m_MsgBox.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.YesToAll | QMessageBox.StandardButton.Cancel
+        )
         m_MsgBox.setDefaultButton(QMessageBox.StandardButton.Yes)
         m_MsgBox.button(QMessageBox.StandardButton.Yes).setText('  Пропустить  ')
         m_MsgBox.button(QMessageBox.StandardButton.YesToAll).setText('  Пропустить все  ')
         m_MsgBox.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
-        
+
         skipAll = False
 
         self.close()
@@ -592,10 +627,12 @@ class siaPdfView(QScrollArea):
                 return
             if not doc.is_encrypted:
                 return
-            m_InputDlg.setLabelText(f"Пароль открытия файла '{filename}' не верный!\nВведите правильный, либо нажмите 'Отмена':")
+            m_InputDlg.setLabelText(
+                f"Пароль открытия файла '{filename}' не верный!\nВведите правильный, либо нажмите 'Отмена':"
+            )
 
     def close(self):
-        if self._doc != None:
+        if self._doc is not None:
             self._doc.close()
             self._doc = None
             self._current_page = -1
@@ -619,7 +656,7 @@ class siaPdfView(QScrollArea):
     def pageCount(self):
         try:
             return self._doc.page_count
-        except:
+        except Exception:
             return 0
 
     def goToPage(self, pno: int):
@@ -663,22 +700,22 @@ class siaPdfView(QScrollArea):
             QGuiApplication.clipboard().setImage(img.copy(r))
 
     @Slot()
-    def copyRectTextToClipboard(self, trim:bool=False):
+    def copyRectTextToClipboard(self, trim: bool = False):
         if self._current_page > -1 and self.selectedRect > -1:
             r = self.selections[self.selectedRect].rF
             rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
             rc = rc / self._matrix
             rc = rc / self._doc[self._current_page].rotation_matrix
-            recttext = self._doc[self._current_page].get_text("text", clip = rc).rstrip()
+            recttext = self._doc[self._current_page].get_text("text", clip=rc).rstrip()
             if trim:
-                recttext = re.sub('\s+', ' ', recttext)
+                recttext = re.sub(r'\s+', ' ', recttext)
             if not recttext:
                 InfoMsgBox(self, 'Копирование текста', 'В выделенном участке отсутствует текст в текстовом слое.')
             else:
                 QGuiApplication.clipboard().setText(recttext)
 
     @Slot()
-    def recognizeAndCopyToClipboard(self, tesseract_cmd:str, trim:bool):
+    def recognizeAndCopyToClipboard(self, tesseract_cmd: str, trim: bool):
         if self._current_page > -1 and self.selectedRect > -1:
             pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
             img = self._pageimage.pixmap().toImage()
@@ -686,7 +723,7 @@ class siaPdfView(QScrollArea):
             img = ImageQt.fromqimage(img.copy(r))
             recttext = pytesseract.image_to_string(img, lang='rus+eng')
             if trim:
-                recttext = re.sub('\s+', ' ', recttext)
+                recttext = re.sub(r'\s+', ' ', recttext)
             if not recttext:
                 InfoMsgBox(self, 'Распознание текста', 'В выделенном участке не удалось распознать текст.')
             else:
@@ -712,7 +749,7 @@ class siaPdfView(QScrollArea):
                 QGuiApplication.clipboard().setText(txt)
 
     @Slot(bool)
-    def copyRectsInfoToClipboard(self, all:bool=False):
+    def copyRectsInfoToClipboard(self, all: bool = False):
         if self._current_page > -1:
             if all:
                 sels = self.selections_all.copy()
@@ -730,8 +767,11 @@ class siaPdfView(QScrollArea):
                 else:
                     selected = None
 
-                selssort_key = lambda r:(r.pno, r.rF.y(), r.rF.x()) 
-                sels.sort(key = selssort_key)
+                # selssort_key = lambda r: (r.pno, r.rF.y(), r.rF.x())
+                def selssort_key(r):
+                    return (r.pno, r.rF.y(), r.rF.x())
+
+                sels.sort(key=selssort_key)
                 pno = self._current_page
                 for i, s in enumerate(sels):
                     r = s.rF
@@ -740,12 +780,12 @@ class siaPdfView(QScrollArea):
                     if all:
                         pno = max(s.pno, 0)
                     # rc = rc / self._doc[pno].rotation_matrix
-    
+
                     recttext += f"{i + 1}{'*' if s is selected else ''}, {pno + 1}{'**' if s.pno == -1 else ''}"
                     if all:
                         recttext += f", {self._doc[pno].rotation}"
                     recttext += f": ({round(rc.x0, 2)}, {round(rc.y0, 2)}, {round(rc.x1, 2)}, {round(rc.y1, 2)})\n"
-            
+
             QGuiApplication.clipboard().setText(recttext)
             InfoMsgBox(self, 'Информация о выделенных участках', recttext)
 
@@ -758,7 +798,7 @@ class siaPdfView(QScrollArea):
             else:
                 r.pno = -1
             self._pageimage.update()
-            
+
     def pagesRotate(self, dir: int, all: bool):
         if self._current_page > -1:
             if all:
@@ -767,7 +807,7 @@ class siaPdfView(QScrollArea):
             else:
                 pno = self._current_page
                 pno_end = pno + 1
-            
+
             while pno < pno_end:
                 src_rot_mat = self._doc[pno].rotation_matrix * self._matrix
                 self._doc[pno].set_rotation((self._doc[pno].rotation + (0, 270, 90, 180)[dir]) % 360)
@@ -780,7 +820,7 @@ class siaPdfView(QScrollArea):
                         rc = (rc / src_rot_mat) * dst_rot_mat
                         r.setRect(rc.x0, rc.y0, rc.x1 - rc.x0, rc.y1 - rc.y0)
                 pno += 1
-            
+
             pno = self._current_page
             self._current_page = -1
             self._show_page(pno)
@@ -792,8 +832,7 @@ class siaPdfView(QScrollArea):
         sel.rF.setCoords(rot_r.x0, rot_r.y0, rot_r.x1, rot_r.y1)
         self.selections_all.append(sel)
         if pno == self._current_page:
-            sel.update_r(self._scr_w, \
-                    self._scr_h, self._eth_w, self._eth_h)
+            sel.update_r(self._scr_w, self._scr_h, self._eth_w, self._eth_h)
             self.selections.append(sel)
             self._pageimage.update()
 
@@ -820,7 +859,7 @@ class siaPdfView(QScrollArea):
                 new_sel = selectionRect(self._current_page)
                 new_sel.rF = max_rect
                 new_sel.update_r(self._scr_w, self._scr_h, self._eth_w, self._eth_h)
-                
+
                 self.selections.append(new_sel)
                 self.selections_all.append(new_sel)
 
@@ -843,10 +882,11 @@ class siaPdfView(QScrollArea):
         self.rectSelected.emit(False)
 
     def wheelEvent(self, wheelEvent: QWheelEvent):
-        if (wheelEvent.modifiers() & Qt.KeyboardModifier.AltModifier) or \
-            (wheelEvent.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+        if (wheelEvent.modifiers() & Qt.KeyboardModifier.AltModifier) or (
+            wheelEvent.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        ):
             super().wheelEvent(wheelEvent)
-        
+
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
@@ -854,7 +894,7 @@ class siaPdfView(QScrollArea):
         alt = event.modifiers() & Qt.KeyboardModifier.AltModifier
 
         if key in [Qt.Key.Key_PageUp, Qt.Key.Key_PageDown]:
-             return
+            return
 
         # print(key)
         if key in [Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Space]:
@@ -870,7 +910,7 @@ class siaPdfView(QScrollArea):
                 self.rectSelected.emit(True)
                 p_pt = self._pageimage.mapToParent(self.selections[self.selectedRect].r.topLeft())
                 self.ensureVisible(p_pt.x(), p_pt.y(), 50, 50)
-       
+
         if self.selectedRect == -1:
             # self.parent().keyPressEvent(event)
             # self._pageimage.update()
@@ -888,46 +928,54 @@ class siaPdfView(QScrollArea):
         if alt:
             flUpdate = False
             if key == Qt.Key.Key_Left:
-                self.horizontalScrollBar().setValue(
-                    self.horizontalScrollBar().value() - 10)
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - 10)
             elif key == Qt.Key.Key_Right:
-                self.horizontalScrollBar().setValue(
-                    self.horizontalScrollBar().value() + 10)
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + 10)
             elif key == Qt.Key.Key_Up:
-                self.verticalScrollBar().setValue(
-                    self.verticalScrollBar().value() - 10)
+                self.verticalScrollBar().setValue(self.verticalScrollBar().value() - 10)
             elif key == Qt.Key.Key_Down:
-                self.verticalScrollBar().setValue(
-                    self.verticalScrollBar().value() + 10)
+                self.verticalScrollBar().setValue(self.verticalScrollBar().value() + 10)
         else:
             if key in [Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Space]:
                 pass
             elif key == Qt.Key.Key_Left:
-                dx = -self.selections[self.selectedRect].shiftX(-1 if ctrl else -10, shft,
-                                                                                self._pageimage.width(),
-                                                                                self._pageimage.height()).x2()
+                dx = (
+                    -self.selections[self.selectedRect]
+                    .shiftX(-1 if ctrl else -10, shft, self._pageimage.width(), self._pageimage.height())
+                    .x2()
+                )
             elif key == Qt.Key.Key_Right:
                 if shft:
-                    dx = self.selections[self.selectedRect].shiftX(1 if ctrl else 10, shft,
-                                                                                self._pageimage.width(),
-                                                                                self._pageimage.height()).x2()
+                    dx = (
+                        self.selections[self.selectedRect]
+                        .shiftX(1 if ctrl else 10, shft, self._pageimage.width(), self._pageimage.height())
+                        .x2()
+                    )
                 else:
-                    dx = self.selections[self.selectedRect].shiftX(1 if ctrl else 10, shft,
-                                                                                self._pageimage.width(),
-                                                                                self._pageimage.height()).x1()
+                    dx = (
+                        self.selections[self.selectedRect]
+                        .shiftX(1 if ctrl else 10, shft, self._pageimage.width(), self._pageimage.height())
+                        .x1()
+                    )
             elif key == Qt.Key.Key_Up:
-                dy = -self.selections[self.selectedRect].shiftY(-1 if ctrl else -10, shft,
-                                                                                self._pageimage.width(),
-                                                                                self._pageimage.height()).y2()
+                dy = (
+                    -self.selections[self.selectedRect]
+                    .shiftY(-1 if ctrl else -10, shft, self._pageimage.width(), self._pageimage.height())
+                    .y2()
+                )
             elif key == Qt.Key.Key_Down:
                 if shft:
-                    dy = self.selections[self.selectedRect].shiftY(1 if ctrl else 10, shft,
-                                                                                self._pageimage.width(),
-                                                                                self._pageimage.height()).y2()
+                    dy = (
+                        self.selections[self.selectedRect]
+                        .shiftY(1 if ctrl else 10, shft, self._pageimage.width(), self._pageimage.height())
+                        .y2()
+                    )
                 else:
-                    dy = self.selections[self.selectedRect].shiftY(1 if ctrl else 10, shft,
-                                                                                self._pageimage.width(),
-                                                                                self._pageimage.height()).y1()
+                    dy = (
+                        self.selections[self.selectedRect]
+                        .shiftY(1 if ctrl else 10, shft, self._pageimage.width(), self._pageimage.height())
+                        .y1()
+                    )
             # elif key == Qt.Key_D:
             #     self.one_line_down()
             else:
@@ -937,7 +985,7 @@ class siaPdfView(QScrollArea):
                 # self.parent().keyPressEvent(event)
 
             if dx or dy:
-                vp_topLeft = self._container.mapFromParent(QPoint(0,0))
+                vp_topLeft = self._container.mapFromParent(QPoint(0, 0))
                 vp_x_min = vp_topLeft.x() + 20
                 vp_y_min = vp_topLeft.y() + 20
                 vp_x_max = vp_topLeft.x() + self.viewport().width() - 21
@@ -948,17 +996,16 @@ class siaPdfView(QScrollArea):
                     self.ensureVisible(vp_x_min, abs(dy), 0, 20)
 
             if flUpdateRf:
-                self.selections[self.selectedRect].update_rF(self._scr_w, \
-                    self._scr_h, self._eth_w, self._eth_h)
-            
+                self.selections[self.selectedRect].update_rF(self._scr_w, self._scr_h, self._eth_w, self._eth_h)
+
             # print(self._pageimage.mapToParent(self._pageimage.selections[self._pageimage.selectedRect].getRect().topLeft()))
-                # p_pt = self.mapTo(self.scroll_wg, pt)
+            # p_pt = self.mapTo(self.scroll_wg, pt)
             # self.move(self.x() - dx, self.y() - dy)
             # self.parent_wg.scrollContentsBy(dx, dy)
 
         if flUpdate:
             self._pageimage.update()
-            
+
     def scrollContentsBy(self, dx, dy):
         super().scrollContentsBy(dx, dy)
         self._pageimage.update()
@@ -971,7 +1018,7 @@ class siaPdfView(QScrollArea):
         Args:
             src_pt (QPoint): точка из системы координат изображения
             dest_pt (QPoint): точка в системе координат рабочей области
-        """        
+        """
         # Переводим точку src_pt в систему координат рабочей области
         src_pt = self._container.mapToParent(self._pageimage.mapToParent(src_pt))
 
@@ -979,16 +1026,12 @@ class siaPdfView(QScrollArea):
         # print(dest_pt.x(), src_pt.x(), (src_pt - dest_pt).x())
 
         # Тупо сдвигаем содержимое рабочей области на разницу в координатах
-        self.horizontalScrollBar().setValue(
-            self.horizontalScrollBar().value() + src_pt.x() - dest_pt.x())
-        self.verticalScrollBar().setValue(
-            self.verticalScrollBar().value() + src_pt.y() - dest_pt.y())
+        self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + src_pt.x() - dest_pt.x())
+        self.verticalScrollBar().setValue(self.verticalScrollBar().value() + src_pt.y() - dest_pt.y())
 
     def _set_sizes(self):
-        ww = max(self.viewport().width(),
-                 self._pageimage.width() + 20)
-        hh = max(self.viewport().height(),
-                 self._pageimage.height() + 20)
+        ww = max(self.viewport().width(), self._pageimage.width() + 20)
+        hh = max(self.viewport().height(), self._pageimage.height() + 20)
         self._container.setFixedHeight(hh)
         self._container.setFixedWidth(ww)
         # self._pageimage.move((ww - self._pageimage.width()) // 2,
@@ -1023,7 +1066,7 @@ class siaPdfView(QScrollArea):
             # if self.selectedRect > -1 and self.selections[self.selectedRect].pno > -1:
             self.selectedRect = -1
             self.selections = [sel for sel in self.selections_all if (sel.pno == -1 or sel.pno == pno)]
-            
+
             # if chk_rects:
             i = len(self.selections)
             while i > 0:
@@ -1041,7 +1084,7 @@ class siaPdfView(QScrollArea):
                 #     # if self.selectedRect == i:
                 #     #     self.selectedRect = -1
                 #     # self.rectSelected.emit(self.selectedRect > -1)
-                    
+
             self.rectSelected.emit(False)
             self.currentPageChanged.emit(pno)
 
@@ -1065,13 +1108,12 @@ class siaPdfView(QScrollArea):
             newscale = 3.0
         elif newscale > 0.95 and newscale < 1.1:
             newscale = 1.0
-            
+
         # if (factor < 1 and self._scale_factor > 0.1) or \
         #     (factor > 1 and self._scale_factor < 3.3) or \
         #     (factor == 1):
-        
+
         if self._scale_factor != newscale:
-            
             factor = newscale / self._scale_factor
             self._scale_factor = newscale
 
@@ -1081,7 +1123,7 @@ class siaPdfView(QScrollArea):
                 destPoint = wheelMousePos
                 # destPoint = QPoint(self.viewport().width() // 2,
                 #                      self.viewport().height() // 2)
-            
+
             # destPoint - это "якорная" точка относительно левого верхнего угла всего виджета
             # print('--------------------------------------------------')
             # print('destPoint на экране:', destPoint)
@@ -1103,7 +1145,7 @@ class siaPdfView(QScrollArea):
             # self._zoom_in_act.setEnabled(self._scale_factor < 3.0)
             # self._zoom_out_act.setEnabled(self._scale_factor > 0.2)
             self._set_sizes()
-            
+
             for r in self.selections:
                 r.update_r(self._scr_w, self._scr_h, self._eth_w, self._eth_h)
 
@@ -1120,7 +1162,7 @@ class siaPdfView(QScrollArea):
     def setSelectionPoint(self, pt: QPoint, nm: int):
         """Установить координаты текущей выделенной области в соответствии
         с идентификатором действия
-        
+
         1 - начало выделения области, оба угла устанавливаются в точку pt
 
         2 - перемещение второго угла в точку pt
@@ -1138,7 +1180,7 @@ class siaPdfView(QScrollArea):
         Args:
             pt (QPoint): полощение указателя мыши
             nm (int): идентификатор действия
-        """        
+        """
         # pt.toPointF
         if nm > 10:
             r = self.selections[self.selectedRect]
@@ -1196,22 +1238,24 @@ class siaPdfView(QScrollArea):
 
                 self.movePoint = pt
                 self.ensureVisible(p_pt.x(), p_pt.y(), 10, 10)
-            
+
         self._pageimage.update()
 
+
 class containerWidget(QWidget):
-    """Виджет-контейнер для размещения внутри него страницы документа, 
-    обеспечения отступов между страницей документа и основной областью просмотра. 
+    """Виджет-контейнер для размещения внутри него страницы документа,
+    обеспечения отступов между страницей документа и основной областью просмотра.
     """
+
     zoomIn = Signal(bool)
     zoomOut = Signal(bool)
 
-    def __init__(self, parent:siaPdfView=None):
+    def __init__(self, parent: siaPdfView = None):
         super().__init__(parent)
         self.parent_wg = parent
         self.child_wg = None
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        
+
     def setWidget(self, childWidget):
         self.child_wg = childWidget
 
@@ -1259,8 +1303,9 @@ class containerWidget(QWidget):
             if self.parent_wg.selectedRect == -1:
                 if len(self.parent_wg.selections_all) < self.parent_wg.selectionsMax:
                     self.parent_wg.selectedRect = len(self.parent_wg.selections)
-                    newsel = selectionRect(-1 if event.modifiers() & Qt.KeyboardModifier.ControlModifier \
-                        else self.parent_wg._current_page)
+                    newsel = selectionRect(
+                        -1 if event.modifiers() & Qt.KeyboardModifier.ControlModifier else self.parent_wg._current_page
+                    )
                     self.parent_wg.selections.append(newsel)
                     self.parent_wg.selections_all.append(newsel)
                     self.parent_wg.move_mode = 1
@@ -1269,7 +1314,7 @@ class containerWidget(QWidget):
                     self.parent_wg.rectSelected.emit(True)
                 else:
                     self.child_wg.update()
-        
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -1314,13 +1359,13 @@ class containerWidget(QWidget):
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
             else:
                 self.unsetCursor()
-        elif self.parent_wg.move_mode == 1: # двигаем угол
+        elif self.parent_wg.move_mode == 1:  # двигаем угол
             self.parent_wg.setSelectionPoint(pt, 2)
-        elif self.parent_wg.move_mode == 2: # двигаем всю область
+        elif self.parent_wg.move_mode == 2:  # двигаем всю область
             self.parent_wg.setSelectionPoint(pt, 4)
-        elif self.parent_wg.move_mode == 3: # двигаем вертикальные стороны
+        elif self.parent_wg.move_mode == 3:  # двигаем вертикальные стороны
             self.parent_wg.setSelectionPoint(pt, 5)
-        elif self.parent_wg.move_mode == 4: # двигаем горизонтальные стороны
+        elif self.parent_wg.move_mode == 4:  # двигаем горизонтальные стороны
             self.parent_wg.setSelectionPoint(pt, 6)
         super().mouseMoveEvent(event)
 
@@ -1328,8 +1373,9 @@ class containerWidget(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             if self.parent_wg.move_mode in [1, 3, 4]:
                 self.unsetCursor()
-                self.parent_wg.selections[self.parent_wg.selectedRect].update_rF(self.parent_wg._scr_w, \
-                    self.parent_wg._scr_h, self.parent_wg._eth_w, self.parent_wg._eth_h)
+                self.parent_wg.selections[self.parent_wg.selectedRect].update_rF(
+                    self.parent_wg._scr_w, self.parent_wg._scr_h, self.parent_wg._eth_w, self.parent_wg._eth_h
+                )
                 if self.parent_wg.selections[self.parent_wg.selectedRect].isNull():
                     ind = self.parent_wg.selections_all.index(self.parent_wg.selections[self.parent_wg.selectedRect])
                     self.parent_wg.selections_all.pop(ind)
@@ -1338,10 +1384,11 @@ class containerWidget(QWidget):
                     self.child_wg.update()
                     self.parent_wg.rectSelected.emit(False)
             elif self.parent_wg.move_mode == 2:
-                self.parent_wg.selections[self.parent_wg.selectedRect].update_rF(self.parent_wg._scr_w, \
-                    self.parent_wg._scr_h, self.parent_wg._eth_w, self.parent_wg._eth_h)
-                    # print('Ok', self.parent_wg.selections[self.parent_wg.selectedRect].r,
-                    #       self.parent_wg.selections[self.parent_wg.selectedRect].rF)
+                self.parent_wg.selections[self.parent_wg.selectedRect].update_rF(
+                    self.parent_wg._scr_w, self.parent_wg._scr_h, self.parent_wg._eth_w, self.parent_wg._eth_h
+                )
+                # print('Ok', self.parent_wg.selections[self.parent_wg.selectedRect].r,
+                #       self.parent_wg.selections[self.parent_wg.selectedRect].rF)
             self.parent_wg.move_mode = 0
         super().mouseReleaseEvent(event)
 
@@ -1372,10 +1419,9 @@ class containerWidget(QWidget):
 
 
 class pageWidget(QLabel):
-    """Виджет для отображения страницы файла PDF
-    """
+    """Виджет для отображения страницы файла PDF"""
 
-    def __init__(self, parent:containerWidget=None, scrollWidget:siaPdfView=None):
+    def __init__(self, parent: containerWidget = None, scrollWidget: siaPdfView = None):
         super().__init__(parent)
         self.parent_wg = parent
         self.scroll_wg = scrollWidget
@@ -1383,34 +1429,34 @@ class pageWidget(QLabel):
         self.pen = QPen()
         self.pen.setWidth(1)
         self.pen.setStyle(Qt.PenStyle.DashLine)
-        self.pen.setColor(QColor.fromRgb(255,0,0,255))
+        self.pen.setColor(QColor.fromRgb(255, 0, 0, 255))
 
         self.pen_dis = QPen()
         self.pen_dis.setWidth(1)
         self.pen_dis.setStyle(Qt.PenStyle.SolidLine)
-        self.pen_dis.setColor(QColor.fromRgb(128,128,128,255))
+        self.pen_dis.setColor(QColor.fromRgb(128, 128, 128, 255))
 
         self.pen2 = QPen()
         self.pen2.setWidth(1)
         self.pen2.setStyle(Qt.PenStyle.SolidLine)
-        self.pen2.setColor(QColor.fromRgb(255,0,0,255))
+        self.pen2.setColor(QColor.fromRgb(255, 0, 0, 255))
 
         self.fill = QBrush()
         self.fill.setStyle(Qt.BrushStyle.SolidPattern)
-        self.fill.setColor(QColor.fromRgb(255,255,0,64))
+        self.fill.setColor(QColor.fromRgb(255, 255, 0, 64))
 
         self.fill_all = QBrush()
         self.fill_all.setStyle(Qt.BrushStyle.SolidPattern)
-        self.fill_all.setColor(QColor.fromRgb(0,255,0,64))
+        self.fill_all.setColor(QColor.fromRgb(0, 255, 0, 64))
 
         self.fill_dis = QBrush()
         self.fill_dis.setStyle(Qt.BrushStyle.BDiagPattern)
-        self.fill_dis.setColor(QColor.fromRgb(0,0,0,64))
+        self.fill_dis.setColor(QColor.fromRgb(0, 0, 0, 64))
 
         self.fill2 = QBrush()
         self.fill2.setStyle(Qt.BrushStyle.SolidPattern)
         # self.fill2.setColor(QColor.fromRgb(255,0,0,255))
-        self.fill2.setColor(QColor.fromRgb(255,255,255,255))
+        self.fill2.setColor(QColor.fromRgb(255, 255, 255, 255))
 
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 

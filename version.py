@@ -9,5 +9,5 @@ pyinstaller_versionfile.create_versionfile(
     legal_copyright="© Igor Stepanenkov. All rights reserved.",
     original_filename="minipdftools.exe",
     product_name="Mini PDF Tools",
-    translations=[0x419, 1251]
+    translations=[0x419, 1251],
 )

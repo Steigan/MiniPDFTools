@@ -1,8 +1,9 @@
-from PySide2.QtWidgets import (QDialog, QDialogButtonBox)
+from PySide2.QtWidgets import QDialog, QDialogButtonBox
 from PySide2.QtCore import Signal, Slot, QRegularExpression
 from PySide2.QtGui import QRegularExpressionValidator
 from censore_ui import Ui_CensoreDialog
 from saveasdlg import PageMode, FileFormat, PageRotation, SaveParams
+
 
 class CensoreDialog(QDialog):
     def __init__(self, parent=None):
@@ -15,11 +16,11 @@ class CensoreDialog(QDialog):
 
         self.m_currentParams = SaveParams()
         # self.m_currentParams.load_params()
-        
+
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText('  Только выделить области  ')
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Save).setText('  Сохранить как новый файл  ')
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText('  Отмена  ')
-        
+
         if self.m_currentParams.format_censore == FileFormat.fmtPDF:
             self.m_currentParams.format_censore = FileFormat.fmtPDFjpeg
         if self.m_currentParams.format_censore == FileFormat.fmtPDFjpeg:
@@ -43,7 +44,7 @@ class CensoreDialog(QDialog):
         self.ui.chkSingles.setChecked(self.m_currentParams.singles)
 
         self.rotation_checked(self.m_currentParams.rotation)
-        
+
         self.ui.cmbDPI.setCurrentText(str(self.m_currentParams.dpi))
         self.ui.SliderQuality.setValue(self.m_currentParams.quality)
 
@@ -52,7 +53,7 @@ class CensoreDialog(QDialog):
         self.ui.chkPost.setChecked(self.m_currentParams.censorePost)
         self.ui.chkIPU.setChecked(self.m_currentParams.censoreIPU)
         self.ui.chkQR.setChecked(self.m_currentParams.censoreQR)
-        
+
         self.resize(self.minimumSizeHint())
 
     ############################################
@@ -127,8 +128,10 @@ class CensoreDialog(QDialog):
         fl_rng = m_pgmode == PageMode.pgRange
         self.ui.lblPg.setEnabled(fl_rng)
         self.ui.edtPages.setEnabled(fl_rng)
-        self.ui.chkSingles.setEnabled(self.m_currentParams.format_censore in (FileFormat.fmtPDF, FileFormat.fmtPDFjpeg) \
-            and m_pgmode != PageMode.pgCurrent)
+        self.ui.chkSingles.setEnabled(
+            self.m_currentParams.format_censore in (FileFormat.fmtPDF, FileFormat.fmtPDFjpeg)
+            and m_pgmode != PageMode.pgCurrent
+        )
 
     @Slot()
     def on_rbtPgAll_clicked(self):
