@@ -1,5 +1,5 @@
 from PySide2.QtWidgets import QDialog, QDialogButtonBox
-from PySide2.QtCore import Signal, Slot, QRegularExpression
+from PySide2.QtCore import Slot, QRegularExpression
 from PySide2.QtGui import QRegularExpressionValidator
 from censore_ui import Ui_CensoreDialog
 from saveasdlg import PageMode, FileFormat, PageRotation, SaveParams

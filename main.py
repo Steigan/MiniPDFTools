@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 import sys
-import os
+# import os
 from argparse import ArgumentParser, RawTextHelpFormatter
 
 from PySide2.QtWidgets import QApplication

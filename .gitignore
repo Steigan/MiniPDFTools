@@ -6,7 +6,6 @@
 ################################
 ########### FOLDERS ############
 ################################
-build/
 html/
 .benchmarks/
 reports/
@@ -141,3 +140,4 @@ venv.bak/
 .pre-commit-config.yaml
 setup.cfg
 pyproject.toml
+.idea/

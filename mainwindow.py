@@ -7,7 +7,7 @@ import sys
 import re
 import io
 import os
-import platform
+# import platform
 import shutil
 import configparser
 import subprocess
@@ -66,6 +66,7 @@ class myQSpinBox(QSpinBox):
             super().keyPressEvent(e)
 
 
+# noinspection PyBroadException,PyProtectedMember
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -132,6 +133,7 @@ class MainWindow(QMainWindow):
         self.m_pageSelector.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.m_pageSelector.setSuffix(' из 0')
         self.m_pageSelector.setMinimumWidth(70)
+        # noinspection PyTypeChecker
         self.m_pageSelector.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         self.pdfView = siaPdfView(self)
@@ -235,7 +237,9 @@ class MainWindow(QMainWindow):
         event.acceptProposedAction()
 
     @Slot(QUrl)
-    def open(self, doc_location, files_list=[]):
+    def open(self, doc_location, files_list=None):
+        if files_list is None:
+            files_list = []
         if doc_location == '' or doc_location.isLocalFile():
             if doc_location:
                 self.m_realFile = True
@@ -299,7 +303,7 @@ class MainWindow(QMainWindow):
         self.ui.actionHome.setEnabled(page > 1)
         self.ui.actionNext_Page.setEnabled(page < self.pdfView.pageCount())
         self.ui.actionEnd.setEnabled(page < self.pdfView.pageCount())
-        if page > 0 and page <= self.pdfView.pageCount():
+        if 0 < page <= self.pdfView.pageCount():
             self.pdfView.goToPage(page - 1)
 
     @Slot(int)
@@ -309,6 +313,7 @@ class MainWindow(QMainWindow):
     def combineFiles(self, filelist: list):
         dlg = CombineDialog(self, filelist, self.m_validExtensions)
         if dlg.exec_():
+            # noinspection PyTypeChecker
             self.open('', dlg.getFilelist())
 
     @Slot()
@@ -345,6 +350,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def on_actionClose_triggered(self):
         self.pdfView.close()
+        # noinspection PyTypeChecker
         self.open('')
 
     def CheckNewFile(self, outfile, ext, ind, overwrite_all):
@@ -451,12 +457,12 @@ class MainWindow(QMainWindow):
                 # print(qr_txt)
                 # Выделяем ключевые слова из ФИО
                 try:
-                    fio = [w for w in re.search(r'\|lastName=([^\|]*)', qr_txt)[1].split(' ') if len(w) > 3]
+                    fio = [w for w in re.search(r'\|lastName=([^|]*)', qr_txt)[1].split(' ') if len(w) > 3]
                 except Exception:
                     fio = []
                 # Выделяем ключевые слова из адреса
                 try:
-                    addr = [w for w in re.search(r'\|payerAddress=([^\|]*)', qr_txt)[1].split(' ') if len(w) > 3]
+                    addr = [w for w in re.search(r'\|payerAddress=([^|]*)', qr_txt)[1].split(' ') if len(w) > 3]
                 except Exception:
                     addr = []
                 # print(fio, addr)
@@ -517,8 +523,8 @@ class MainWindow(QMainWindow):
             anon_rects.append([rLS, 'IPU'])
 
         # rectsort_x0_key = lambda r: r.x0
-        def rectsort_x0_key(r):
-            return r.x0
+        def rectsort_x0_key(x):
+            return x.x0
 
         # rFIO.sort(key = rectsort_x0_key)
         # for grp, items in groupby(rFIO , key=rectsort_x0_key):
@@ -583,6 +589,7 @@ class MainWindow(QMainWindow):
             anon_rects.append([fitz.Rect(r), 'FIO'])
 
         if flDoAddr:
+            # noinspection PyUnboundLocalVariable
             r.x0 = rAddr_grpd[0].x0
             r.x1 = rAddr_grpd[0].x1 + 1
             anon_rects.append([fitz.Rect(r), 'ADDR'])
@@ -630,12 +637,14 @@ class MainWindow(QMainWindow):
                 if p.setselectionsonly:
                     self.pdfView.addSelection(pno, anon_rect[0])
                 else:
+                    # noinspection PyTypeChecker
                     r = anon_rect[0] * page.rotation_matrix * mat
                     try:
                         r.x0 = int(r.x0)
                         r.x1 = int(r.x1)
                         r.y0 = int(r.y0)
                         r.y1 = int(r.y1)
+                        # noinspection PyUnboundLocalVariable
                         crop_img = img.crop(r)
                         # # Use GaussianBlur directly to blur the image 10 times.
                         # blur_image = crop_img.filter(ImageFilter.GaussianBlur(radius=10))
@@ -716,7 +725,7 @@ class MainWindow(QMainWindow):
             doc = self.pdfView._doc
             for pages in pageranges:
                 for pno in pages:
-                    if pno >= 0 and pno < doc.page_count:
+                    if 0 <= pno < doc.page_count:
                         self.censore_page(doc=doc, pno=pno, p=p)
                         ind += 1
                         self.progressBar.setValue(ind * 100 // approx_pgcount)
@@ -775,6 +784,7 @@ class MainWindow(QMainWindow):
         zoom = p.dpi / 72
         mat = fitz.Matrix(zoom, zoom)
         if p.format in [FileFormat.fmtPDF, FileFormat.fmtPDFjpeg] and not m_singles:
+            # noinspection PyUnresolvedReferences
             pdfout = fitz.open()
         ind = 0
 
@@ -800,9 +810,10 @@ class MainWindow(QMainWindow):
             and (not m_singles)
             and doc.can_save_incrementally()
         ):
+            # noinspection PyUnboundLocalVariable
             pdfout.close()
             # doc.close()
-            doc = None
+            # doc = None
             try:
                 shutil.copyfile(self.m_currentFileName, outfile)
             except Exception as e:
@@ -812,6 +823,7 @@ class MainWindow(QMainWindow):
                 return
 
             # print('Эксклюзивный режим ...')
+            # noinspection PyUnresolvedReferences
             doc = fitz.open(outfile)
             if doc.needs_pass:
                 doc.authenticate(self.pdfView._psw)
@@ -836,7 +848,7 @@ class MainWindow(QMainWindow):
             overwrite_all = False
             for pages in pageranges:
                 for pno in pages:
-                    if pno >= 0 and pno < doc.page_count:
+                    if 0 <= pno < doc.page_count:
                         ind += 1
 
                         self.progressBar.setValue(ind * 100 // approx_pgcount)
@@ -849,6 +861,7 @@ class MainWindow(QMainWindow):
                         try:
                             if p.format == FileFormat.fmtPDF:
                                 if m_singles:
+                                    # noinspection PyUnresolvedReferences
                                     newdoc = fitz.open()
                                     newdoc.insert_pdf(doc, from_page=pno, to_page=pno)
 
@@ -871,6 +884,7 @@ class MainWindow(QMainWindow):
                                                 raise
                                     newdoc.close()
                                 else:
+                                    # noinspection PyUnboundLocalVariable
                                     pdfout.insert_pdf(doc, from_page=pno, to_page=pno)
                                     # pg = pdfout[pdfout.page_count - 1]
                                     # print(pg.rotation)
@@ -932,6 +946,7 @@ class MainWindow(QMainWindow):
                                     temp = io.BytesIO()
                                     pix.pil_save(temp, format="jpeg", quality=p.quality)
                                     if m_singles:
+                                        # noinspection PyUnresolvedReferences
                                         newdoc = fitz.open()
                                         opage = newdoc.new_page(width=page.rect.width, height=page.rect.height)
                                         opage.insert_image(opage.rect, stream=temp)
@@ -1186,6 +1201,7 @@ class MainWindow(QMainWindow):
                 # self.progressBar.setValue(current_page * 95 / pgcount)
 
             if old_np:
+                # noinspection PyUnboundLocalVariable
                 np_list.append((old_np, np_start_pg, current_page + 1))
 
             # print(np_list)

@@ -1,12 +1,16 @@
 from PySide2.QtWidgets import QDialog, QDialogButtonBox, QFileDialog
-from PySide2.QtCore import Signal, Slot, QItemSelectionModel, QSettings
+from PySide2.QtCore import Slot, QItemSelectionModel, QSettings
 from combine_ui import Ui_CombineDialog
 import os
 
 
 class CombineDialog(QDialog):
-    def __init__(self, parent=None, filelist=[], validExtensions=[]):
+    def __init__(self, parent=None, filelist=None, validExtensions=None):
         super().__init__(parent)
+        if validExtensions is None:
+            validExtensions = []
+        if filelist is None:
+            filelist = []
         self.ui = Ui_CombineDialog()
         self.ui.setupUi(self)
 

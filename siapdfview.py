@@ -15,13 +15,10 @@
 """
 
 from PySide2.QtWidgets import (
-    QApplication,
     QDialog,
-    QFileDialog,
     QLabel,
     QSlider,
     QInputDialog,
-    QMainWindow,
     QMessageBox,
     QScrollArea,
     QComboBox,
@@ -29,16 +26,11 @@ from PySide2.QtWidgets import (
     QSizePolicy,
     QFrame,
     QWidget,
-    QVBoxLayout,
     QHBoxLayout,
 )
 from PySide2.QtGui import (
-    QColorSpace,
     QGuiApplication,
     QImage,
-    QImageReader,
-    QImageWriter,
-    QKeySequence,
     QPalette,
     QPainter,
     QPixmap,
@@ -50,7 +42,6 @@ from PySide2.QtGui import (
     QWheelEvent,
     QMouseEvent,
     QKeyEvent,
-    QClipboard,
 )
 from PySide2.QtCore import Qt, Signal, Slot, QRect, QRectF, QPoint  # QDir, QStandardPaths,
 import re
@@ -313,7 +304,7 @@ class selectionRect:
                 self.r.setWidth(min(self.r.width() + offs, w - self.x1() - 1))
         else:
             self.r.moveLeft(self.r.left() + offs)
-            dx, dy = self.adjustPosition(w, h)
+            self.adjustPosition(w, h)
         return self
 
     def shiftY(self, offs: int, shft, w: int, h: int):
@@ -335,10 +326,11 @@ class selectionRect:
                 self.r.setHeight(min(self.r.height() + offs, h - self.y1() - 1))
         else:
             self.r.moveTop(self.r.top() + offs)
-            dx, dy = self.adjustPosition(w, h)
+            self.adjustPosition(w, h)
         return self
 
 
+# noinspection PyUnresolvedReferences
 class zoomSlider(QSlider):
     """Виджет слайдера для выбора масштаба просмотра страницы"""
 
@@ -351,6 +343,7 @@ class zoomSlider(QSlider):
         self.zoomSliderDoubleClicked.emit()
 
 
+# noinspection PyUnresolvedReferences
 class zoomSelector(QWidget):
     """Виджет выбора масштаба просмотра страницы (на основе слайдера)"""
 
@@ -415,6 +408,7 @@ class zoomSelector(QWidget):
         self.Slider.setEnabled(fl)
 
 
+# noinspection PyUnresolvedReferences
 class zoomSelectorCB(QComboBox):
     """Виджет выбора масштаба просмотра страницы (на основе комбобокса)"""
 
@@ -460,7 +454,7 @@ class zoomSelectorCB(QComboBox):
         #     self.zoom_mode_changed.emit(QPdfView.ZoomMode.FitInView)
         # elif text.endswith("%"):
         if text.endswith("%"):
-            factor = 1.0
+            # factor = 1.0
             zoom_level = int(text[:-1])
             factor = zoom_level / 100.0
             # self.zoom_mode_changed.emit(QPdfView.ZoomMode.Custom)
@@ -471,6 +465,7 @@ class zoomSelectorCB(QComboBox):
         self.on_current_text_changed(self.lineEdit().text())
 
 
+# noinspection PyBroadException,PyUnresolvedReferences
 class siaPdfView(QScrollArea):
     """Виджет-основная прокручиваемая область просмотра"""
 
@@ -749,15 +744,15 @@ class siaPdfView(QScrollArea):
                 QGuiApplication.clipboard().setText(txt)
 
     @Slot(bool)
-    def copyRectsInfoToClipboard(self, all: bool = False):
+    def copyRectsInfoToClipboard(self, fl_all: bool = False):
         if self._current_page > -1:
-            if all:
+            if fl_all:
                 sels = self.selections_all.copy()
                 recttext = "№ п/п, страница, вращение: область\n"
             else:
                 sels = self.selections.copy()
                 recttext = f"Угол вращения исходной страницы: {self._doc[self._current_page].rotation}\n"
-                recttext = "№ п/п, страница: область\n"
+                recttext += "№ п/п, страница: область\n"
 
             if len(sels) == 0:
                 recttext = "Нет выделенных участков!"
@@ -768,8 +763,8 @@ class siaPdfView(QScrollArea):
                     selected = None
 
                 # selssort_key = lambda r: (r.pno, r.rF.y(), r.rF.x())
-                def selssort_key(r):
-                    return (r.pno, r.rF.y(), r.rF.x())
+                def selssort_key(x):
+                    return x.pno, x.rF.y(), x.rF.x()
 
                 sels.sort(key=selssort_key)
                 pno = self._current_page
@@ -777,12 +772,12 @@ class siaPdfView(QScrollArea):
                     r = s.rF
                     rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
                     rc = rc / self._matrix
-                    if all:
+                    if fl_all:
                         pno = max(s.pno, 0)
                     # rc = rc / self._doc[pno].rotation_matrix
 
                     recttext += f"{i + 1}{'*' if s is selected else ''}, {pno + 1}{'**' if s.pno == -1 else ''}"
-                    if all:
+                    if fl_all:
                         recttext += f", {self._doc[pno].rotation}"
                     recttext += f": ({round(rc.x0, 2)}, {round(rc.y0, 2)}, {round(rc.x1, 2)}, {round(rc.y1, 2)})\n"
 
@@ -799,9 +794,9 @@ class siaPdfView(QScrollArea):
                 r.pno = -1
             self._pageimage.update()
 
-    def pagesRotate(self, dir: int, all: bool):
+    def pagesRotate(self, n_dir: int, fl_all: bool):
         if self._current_page > -1:
-            if all:
+            if fl_all:
                 pno = 0
                 pno_end = len(self._doc)
             else:
@@ -810,11 +805,11 @@ class siaPdfView(QScrollArea):
 
             while pno < pno_end:
                 src_rot_mat = self._doc[pno].rotation_matrix * self._matrix
-                self._doc[pno].set_rotation((self._doc[pno].rotation + (0, 270, 90, 180)[dir]) % 360)
+                self._doc[pno].set_rotation((self._doc[pno].rotation + (0, 270, 90, 180)[n_dir]) % 360)
                 dst_rot_mat = self._doc[pno].rotation_matrix * self._matrix
                 for sel in self.selections_all:
                     # sel = selectionRect()
-                    if sel.pno == pno or (sel.pno == -1 and (pno == self._current_page or all)):
+                    if sel.pno == pno or (sel.pno == -1 and (pno == self._current_page or fl_all)):
                         r = sel.rF
                         rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
                         rc = (rc / src_rot_mat) * dst_rot_mat
@@ -1106,7 +1101,7 @@ class siaPdfView(QScrollArea):
             newscale = 0.2
         elif newscale > 3.0:
             newscale = 3.0
-        elif newscale > 0.95 and newscale < 1.1:
+        elif 0.95 < newscale < 1.1:
             newscale = 1.0
 
         # if (factor < 1 and self._scale_factor > 0.1) or \
@@ -1242,6 +1237,7 @@ class siaPdfView(QScrollArea):
         self._pageimage.update()
 
 
+# noinspection PyProtectedMember,PyUnresolvedReferences
 class containerWidget(QWidget):
     """Виджет-контейнер для размещения внутри него страницы документа,
     обеспечения отступов между страницей документа и основной областью просмотра.
@@ -1270,7 +1266,7 @@ class containerWidget(QWidget):
                         self.parent_wg.move_mode = 2
                         self.parent_wg.setSelectionPoint(pt, 3)
                     # elif dirRect in [1, 3, 7, 9]:
-                    elif dirRect > 0 and dirRect < 10:
+                    elif 0 < dirRect < 10:
                         if dirRect == 4 or dirRect == 6:
                             self.parent_wg.move_mode = 3
                         elif dirRect == 2 or dirRect == 8:
@@ -1279,6 +1275,7 @@ class containerWidget(QWidget):
                             self.parent_wg.move_mode = 1
 
                         self.parent_wg.setSelectionPoint(pt, 10 + dirRect)
+                        # noinspection PyTypeChecker
                         self.setCursor(Qt.CursorShape.CrossCursor)
                     else:
                         self.parent_wg.selectedRect = -1
@@ -1295,6 +1292,7 @@ class containerWidget(QWidget):
                             self.child_wg.update()
                         else:
                             self.parent_wg.move_mode = 2
+                            # noinspection PyTypeChecker
                             self.setCursor(Qt.CursorShape.SizeAllCursor)
                             self.parent_wg.setSelectionPoint(pt, 3)
                         break
@@ -1310,6 +1308,7 @@ class containerWidget(QWidget):
                     self.parent_wg.selections_all.append(newsel)
                     self.parent_wg.move_mode = 1
                     self.parent_wg.setSelectionPoint(pt, 1)
+                    # noinspection PyTypeChecker
                     self.setCursor(Qt.CursorShape.CrossCursor)
                     self.parent_wg.rectSelected.emit(True)
                 else:
@@ -1346,16 +1345,22 @@ class containerWidget(QWidget):
                         fl = 1
 
             if fl == 1:
+                # noinspection PyTypeChecker
                 self.setCursor(Qt.CursorShape.PointingHandCursor)
             elif fl == 2:
+                # noinspection PyTypeChecker
                 self.setCursor(Qt.CursorShape.SizeAllCursor)
             elif fl == 3:
+                # noinspection PyTypeChecker
                 self.setCursor(Qt.CursorShape.SizeFDiagCursor)
             elif fl == 4:
+                # noinspection PyTypeChecker
                 self.setCursor(Qt.CursorShape.SizeBDiagCursor)
             elif fl == 5:
+                # noinspection PyTypeChecker
                 self.setCursor(Qt.CursorShape.SizeVerCursor)
             elif fl == 6:
+                # noinspection PyTypeChecker
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
             else:
                 self.unsetCursor()

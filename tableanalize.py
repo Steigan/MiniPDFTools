@@ -47,7 +47,7 @@ class tableBorder:
                 if i == 0 and self.start_coord <= gl:  # начало приходится на начальный край или находится до него
                     self.start_idx = i
                 elif (
-                    self.start_coord >= prev_coord and self.start_coord <= gl
+                    prev_coord <= self.start_coord <= gl
                 ):  # начало между предыдущей направляющей и текущей
                     if (self.start_coord - prev_coord) / (gl - prev_coord) < 0.5:
                         self.start_idx = i - 1
@@ -57,7 +57,7 @@ class tableBorder:
                 if i == max_gl_idx and self.end_coord >= gl:  # конец приходится на конечный край или находится за ним
                     self.end_idx = i
                 elif (
-                    self.end_coord >= prev_coord and self.end_coord <= gl
+                    prev_coord <= self.end_coord <= gl
                 ):  # конец между предыдущей направляющей и текущей
                     if (self.end_coord - prev_coord) / (gl - prev_coord) < 0.5:
                         self.end_idx = i - 1
@@ -74,7 +74,7 @@ def make_text(words):
     (besaed on textbox-extract-1.py sample code)
     """
     line_dict = {}  # key: vertical coordinate, value: list of words
-    words.sort(key=lambda w: w[0])  # sort by horizontal coordinate
+    words.sort(key=lambda ww: ww[0])  # sort by horizontal coordinate
     for w in words:  # fill the line dictionary
         y1 = round(w[3], 1)  # bottom of a word: don't be too picky!
         word = w[4]  # the text of the word
@@ -183,7 +183,7 @@ def parse_page_tables(page, worksheet, start_row, cell_format, strong: bool = Tr
             # print(bd.guideline_idx, bd.start_idx, bd.end_idx)
 
         # Четвертый этап: привязка горизонтальных отрезков к направляющим + заодно формируем матрицу узлов
-        nodes = [[0] * (len(vert)) for j in range(len(hori))]
+        nodes = [[0] * (len(vert)) for _ in range(len(hori))]
         for bd in hori_borders:
             bd.glue(hori_guideline_map, vert)
             m_idx = bd.start_idx
@@ -208,7 +208,7 @@ def parse_page_tables(page, worksheet, start_row, cell_format, strong: bool = Tr
                                 nodes[bd.guideline_idx][cross_bd.guideline_idx] |= (
                                     hor_dir | NODE_DIR_UP
                                 )  # в этом узле есть пересечение
-                            elif cross_bd.start_idx < bd.guideline_idx and bd.guideline_idx < cross_bd.end_idx:
+                            elif cross_bd.start_idx < bd.guideline_idx < cross_bd.end_idx:
                                 nodes[bd.guideline_idx][cross_bd.guideline_idx] |= (
                                     hor_dir | NODE_DIR_DOWN | NODE_DIR_UP
                                 )  # в этом узле есть пересечение
@@ -290,6 +290,7 @@ def parse_tables(doc, xlsfile: str, strong: bool = True):
     # worksheet.write_row(0, 0, ("Код","Объем"))
 
     start_row = 0
+    # noinspection PyTypeChecker
     for pno in range(len(doc)):
         start_row += parse_page_tables(doc[pno], worksheet, start_row, cell_format, strong)
 

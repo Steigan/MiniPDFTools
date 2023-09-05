@@ -1,5 +1,5 @@
-from PySide2.QtWidgets import QDialog, QFileDialog, QMessageBox, QDialogButtonBox
-from PySide2.QtCore import Signal, Slot, QSettings, QRegularExpression
+from PySide2.QtWidgets import QDialog, QDialogButtonBox
+from PySide2.QtCore import Slot, QSettings, QRegularExpression
 from PySide2.QtGui import QRegularExpressionValidator
 from saveas_ui import Ui_SaveAsDialog
 import enum
@@ -38,6 +38,7 @@ class SaveParams:
 
         # self.format = settings.value('format', FileFormat.fmtPDF)
         # self.pgmode = settings.value('pgmode', PageMode.pgAll)
+        # noinspection PyBroadException
         try:
             self.format = FileFormat(int(settings.value('format', '0')))
             self.format_censore = FileFormat(int(settings.value('format_censore', '0')))
