@@ -1,8 +1,14 @@
-from PySide2.QtWidgets import QDialog, QDialogButtonBox
-from PySide2.QtCore import Slot, QRegularExpression
+from PySide2.QtCore import QRegularExpression
+from PySide2.QtCore import Slot
 from PySide2.QtGui import QRegularExpressionValidator
+from PySide2.QtWidgets import QDialog
+from PySide2.QtWidgets import QDialogButtonBox
+
 from censore_ui import Ui_CensoreDialog
-from saveasdlg import PageMode, FileFormat, PageRotation, SaveParams
+from saveasdlg import FileFormat
+from saveasdlg import PageMode
+from saveasdlg import PageRotation
+from saveasdlg import SaveParams
 
 
 class CensoreDialog(QDialog):

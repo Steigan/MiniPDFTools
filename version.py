@@ -1,5 +1,6 @@
 import pyinstaller_versionfile
 
+
 pyinstaller_versionfile.create_versionfile(
     output_file="pdfviewer\\versionfile.txt",
     version="0.0.1.1",

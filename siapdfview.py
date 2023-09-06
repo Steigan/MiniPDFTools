@@ -14,40 +14,43 @@
 * PyMuPDF
 """
 
-from PySide2.QtWidgets import (
-    QDialog,
-    QLabel,
-    QSlider,
-    QInputDialog,
-    QMessageBox,
-    QScrollArea,
-    QComboBox,
-    QLineEdit,
-    QSizePolicy,
-    QFrame,
-    QWidget,
-    QHBoxLayout,
-)
-from PySide2.QtGui import (
-    QGuiApplication,
-    QImage,
-    QPalette,
-    QPainter,
-    QPixmap,
-    QColor,
-    QPen,
-    QBrush,
-    QPaintEvent,
-    QResizeEvent,
-    QWheelEvent,
-    QMouseEvent,
-    QKeyEvent,
-)
-from PySide2.QtCore import Qt, Signal, Slot, QRect, QRectF, QPoint  # QDir, QStandardPaths,
 import re
+
 import fitz
 import pytesseract
-from PIL import ImageQt, ImageOps
+from PIL import ImageOps
+from PIL import ImageQt
+from PySide2.QtCore import QPoint  # QDir, QStandardPaths,
+from PySide2.QtCore import QRect
+from PySide2.QtCore import QRectF
+from PySide2.QtCore import Qt
+from PySide2.QtCore import Signal
+from PySide2.QtCore import Slot
+from PySide2.QtGui import QBrush
+from PySide2.QtGui import QColor
+from PySide2.QtGui import QGuiApplication
+from PySide2.QtGui import QImage
+from PySide2.QtGui import QKeyEvent
+from PySide2.QtGui import QMouseEvent
+from PySide2.QtGui import QPainter
+from PySide2.QtGui import QPaintEvent
+from PySide2.QtGui import QPalette
+from PySide2.QtGui import QPen
+from PySide2.QtGui import QPixmap
+from PySide2.QtGui import QResizeEvent
+from PySide2.QtGui import QWheelEvent
+from PySide2.QtWidgets import QComboBox
+from PySide2.QtWidgets import QDialog
+from PySide2.QtWidgets import QFrame
+from PySide2.QtWidgets import QHBoxLayout
+from PySide2.QtWidgets import QInputDialog
+from PySide2.QtWidgets import QLabel
+from PySide2.QtWidgets import QLineEdit
+from PySide2.QtWidgets import QMessageBox
+from PySide2.QtWidgets import QScrollArea
+from PySide2.QtWidgets import QSizePolicy
+from PySide2.QtWidgets import QSlider
+from PySide2.QtWidgets import QWidget
 from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 

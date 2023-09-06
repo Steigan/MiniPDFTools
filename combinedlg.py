@@ -1,7 +1,13 @@
-from PySide2.QtWidgets import QDialog, QDialogButtonBox, QFileDialog
-from PySide2.QtCore import Slot, QItemSelectionModel, QSettings
-from combine_ui import Ui_CombineDialog
 import os
+
+from PySide2.QtCore import QItemSelectionModel
+from PySide2.QtCore import QSettings
+from PySide2.QtCore import Slot
+from PySide2.QtWidgets import QDialog
+from PySide2.QtWidgets import QDialogButtonBox
+from PySide2.QtWidgets import QFileDialog
+
+from combine_ui import Ui_CombineDialog
 
 
 class CombineDialog(QDialog):

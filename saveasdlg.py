@@ -1,8 +1,13 @@
-from PySide2.QtWidgets import QDialog, QDialogButtonBox
-from PySide2.QtCore import Slot, QSettings, QRegularExpression
-from PySide2.QtGui import QRegularExpressionValidator
-from saveas_ui import Ui_SaveAsDialog
 import enum
+
+from PySide2.QtCore import QRegularExpression
+from PySide2.QtCore import QSettings
+from PySide2.QtCore import Slot
+from PySide2.QtGui import QRegularExpressionValidator
+from PySide2.QtWidgets import QDialog
+from PySide2.QtWidgets import QDialogButtonBox
+
+from saveas_ui import Ui_SaveAsDialog
 
 
 class FileFormat(enum.IntEnum):

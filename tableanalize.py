@@ -2,8 +2,10 @@
 Анализ PDF файла на наличие в нем таблиц (с рамками!!!) и сохранение найденных табличных данных в файл XLSX
 """
 import re
+
 import fitz
 import xlsxwriter
+
 
 # Константы для описания характеристик узлов сетки таблицы
 NODE_DIR_UP = 1
@@ -46,9 +48,7 @@ class tableBorder:
             if self.start_idx == -1:  # начало еще не привязано
                 if i == 0 and self.start_coord <= gl:  # начало приходится на начальный край или находится до него
                     self.start_idx = i
-                elif (
-                    prev_coord <= self.start_coord <= gl
-                ):  # начало между предыдущей направляющей и текущей
+                elif prev_coord <= self.start_coord <= gl:  # начало между предыдущей направляющей и текущей
                     if (self.start_coord - prev_coord) / (gl - prev_coord) < 0.5:
                         self.start_idx = i - 1
                     else:
@@ -56,9 +56,7 @@ class tableBorder:
             if self.start_idx > -1 and self.end_idx == -1:  # конец еще не привязан
                 if i == max_gl_idx and self.end_coord >= gl:  # конец приходится на конечный край или находится за ним
                     self.end_idx = i
-                elif (
-                    prev_coord <= self.end_coord <= gl
-                ):  # конец между предыдущей направляющей и текущей
+                elif prev_coord <= self.end_coord <= gl:  # конец между предыдущей направляющей и текущей
                     if (self.end_coord - prev_coord) / (gl - prev_coord) < 0.5:
                         self.end_idx = i - 1
                     else:

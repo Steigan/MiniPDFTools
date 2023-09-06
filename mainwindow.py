@@ -1,48 +1,58 @@
 # Copyright (C) 2022 The Qt Company Ltd.
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
+import configparser
+import io
+import os
+import re
+
+# import platform
+import shutil
+import subprocess
+
 # import math
 # import datetime
 import sys
-import re
-import io
-import os
-# import platform
-import shutil
-import configparser
-import subprocess
 from itertools import groupby
 
 import fitz
 import xlsxwriter
-from PIL import Image as PILImage, ImageOps, ImageDraw
+from PIL import Image as PILImage
+from PIL import ImageDraw
+from PIL import ImageOps
+from PySide2.QtCore import QSettings  # QModelIndex, QPoint, QStandardPaths,
+from PySide2.QtCore import Qt
+from PySide2.QtCore import QUrl
+from PySide2.QtCore import Slot
+from PySide2.QtWidgets import QAbstractSpinBox  # QSizePolicy, QDialog
+from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QFileDialog
+from PySide2.QtWidgets import QMainWindow
+from PySide2.QtWidgets import QMenu
+from PySide2.QtWidgets import QMessageBox
+from PySide2.QtWidgets import QProgressBar
+from PySide2.QtWidgets import QSpinBox
 from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
-from PySide2.QtWidgets import (
-    QFileDialog,
-    QMainWindow,
-    QMessageBox,
-    QMenu,
-    QApplication,
-    QSpinBox,
-    QAbstractSpinBox,
-    QProgressBar,
-)  # QSizePolicy, QDialog
-from PySide2.QtCore import QUrl, Slot, QSettings, Qt  # QModelIndex, QPoint, QStandardPaths,
-
-from siapdfview import zoomSelector, siaPdfView
+from censoredlg import CensoreDialog
+from combinedlg import CombineDialog
 
 # from ui_mainwindow import Ui_MainWindow
 from mainwindow_ui import Ui_MainWindow
-from saveasdlg import SaveAsDialog, PageMode, FileFormat, PageRotation, SaveParams
-from censoredlg import CensoreDialog
-from combinedlg import CombineDialog
+from saveasdlg import FileFormat
+from saveasdlg import PageMode
+from saveasdlg import PageRotation
+from saveasdlg import SaveAsDialog
+from saveasdlg import SaveParams
+from siapdfview import siaPdfView
+from siapdfview import zoomSelector
 from tableanalize import parse_page_tables
+
 
 ABOUT_TEXT = """
 Mini PDF Tools - мини набор инструментов для просмотра и обработки файлов PDF.
-Версия от 14.08.2023 (c) 2023 Игорь Степаненков
+Версия от 06.09.2023 (c) 2023 Игорь Степаненков
 
 Используемые пакеты и библиотеки:
 PySide2 (c) 2022 The Qt Company Ltd.

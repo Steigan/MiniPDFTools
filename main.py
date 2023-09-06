@@ -2,13 +2,17 @@
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 import sys
-# import os
-from argparse import ArgumentParser, RawTextHelpFormatter
 
+# import os
+from argparse import ArgumentParser
+from argparse import RawTextHelpFormatter
+
+from PySide2.QtCore import QCoreApplication
+from PySide2.QtCore import QUrl
 from PySide2.QtWidgets import QApplication
-from PySide2.QtCore import QCoreApplication, QUrl
 
 from mainwindow import MainWindow
+
 
 # apt-get install qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools tesseract-ocr tesseract-ocr-rus
 
