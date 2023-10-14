@@ -102,23 +102,16 @@ class MainWindow(QMainWindow):
             '.fb2',
         ]
         config = configparser.ConfigParser()
+        config = configparser.ConfigParser()
         try:
             config.read(os.path.join(os.path.dirname(__file__), 'settings.ini'))
-            self.m_tesseract_cmd = config["Settings"]["tesseract_cmd"]
-            if not os.path.exists(self.m_tesseract_cmd):
-                self.m_tesseract_cmd = ""
-            self.m_pdfviewer_cmd = config["Settings"]["pdfviewer_cmd"]
-            if not os.path.exists(self.m_pdfviewer_cmd):
-                self.m_pdfviewer_cmd = ""
-            self.m_xlseditor_cmd = config["Settings"]["xlseditor_cmd"]
-            if not os.path.exists(self.m_xlseditor_cmd):
-                self.m_xlseditor_cmd = ""
-        except Exception:
+            self.m_tesseract_cmd = config.get("Settings", "tesseract_cmd", fallback="")
+            self.m_pdfviewer_cmd = config.get("Settings", "pdfviewer_cmd", fallback="")
+            self.m_xlseditor_cmd = config.get("Settings", "xlseditor_cmd", fallback="")
+        except configparser.Error:
             self.m_tesseract_cmd = ""
             self.m_pdfviewer_cmd = ""
             self.m_xlseditor_cmd = ""
-
-        # self.m_tesseract_cmd = ""
 
         self.ui.setupUi(self)
 
