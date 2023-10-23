@@ -30,7 +30,7 @@ if __name__ == "__main__":
             w.open(QUrl.fromLocalFile(options.file[0]))
         else:
             a.processEvents()
-            w.combineFiles(options.file)
+            w.combine_files(options.file)
     # !!! For debugging !!!
     # w.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\test.pdf'))
     # w.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\source\Платежные документы КТК.pdf'))
