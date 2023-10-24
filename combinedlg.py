@@ -7,21 +7,24 @@ from PySide2.QtWidgets import QDialog
 from PySide2.QtWidgets import QDialogButtonBox
 from PySide2.QtWidgets import QFileDialog
 
+import const
 from combine_ui import Ui_CombineDialog
 
 
 class CombineDialog(QDialog):
-    def __init__(self, parent=None, filelist=None, validExtensions=None):
+    '''Диалог выбора и сортировки файлов для объединения'''
+
+    def __init__(self, parent=None, filelist=None, valid_extensions=None):
         super().__init__(parent)
-        if validExtensions is None:
-            validExtensions = []
+        if valid_extensions is None:
+            valid_extensions = []
         if filelist is None:
             filelist = []
         self.ui = Ui_CombineDialog()
         self.ui.setupUi(self)
 
-        self.m_validExtensions = validExtensions
-        settings = QSettings('Steigan', 'Mini PDF Tools')
+        self._valid_extensions = valid_extensions
+        settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
         self.m_lastfn = settings.value('lastfilename', '')
 
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Ok).clicked.connect(self.accept)
@@ -33,53 +36,52 @@ class CombineDialog(QDialog):
 
         self.on_lstFiles_itemSelectionChanged()
         self.setAcceptDrops(True)
-        # self.ui.lstFiles.currentRowChanged.connect(lambda: self.ui.btnRemove.setEnabled(currentRow >= 0))
-        # self.resize(self.minimumSizeHint())currentChanged
 
-    def getFilelist(self):
+    def get_filelist(self) -> list:
+        '''Возвращает список файлов, выбранных пользователем для объединения'''
         return [self.ui.lstFiles.item(ind).text() for ind in range(self.ui.lstFiles.count())]
 
-    def dragEnterEvent(self, event):
+    def dragEnterEvent(self, event):  # pylint: disable=invalid-name
         if event.mimeData().hasFormat('text/uri-list'):
             event.acceptProposedAction()
 
-    def dropEvent(self, event):
+    def dropEvent(self, event):  # pylint: disable=invalid-name
         url_list = event.mimeData().urls()
         for url in url_list:
-            if url.isLocalFile() and os.path.splitext(url.toLocalFile())[1].lower() in self.m_validExtensions:
+            if url.isLocalFile() and os.path.splitext(url.toLocalFile())[1].lower() in self._valid_extensions:
                 self.ui.lstFiles.addItem(url.toLocalFile())
         self.on_lstFiles_itemSelectionChanged()
         event.acceptProposedAction()
 
     @Slot()
-    def on_btnAdd_clicked(self):
+    def on_btnAdd_clicked(self):  # pylint: disable=invalid-name
         directory = os.path.dirname(self.m_lastfn)
         to_open, _ = QFileDialog.getOpenFileNames(
             self,
             "Выберите файлы PDF",
             directory,
-            f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in self.m_validExtensions).strip()})",
+            f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in self._valid_extensions).strip()})",
         )
 
         if to_open:
             self.m_lastfn = to_open[0]
         for fl in to_open:
-            if os.path.splitext(fl)[1].lower() in self.m_validExtensions:
+            if os.path.splitext(fl)[1].lower() in self._valid_extensions:
                 self.ui.lstFiles.addItem(fl)
         self.on_lstFiles_itemSelectionChanged()
 
     @Slot()
-    def on_btnRemove_clicked(self):
+    def on_btnRemove_clicked(self):  # pylint: disable=invalid-name
         ind = self.ui.lstFiles.selectedIndexes()[0].row()
         self.ui.lstFiles.takeItem(ind)
         self.on_lstFiles_itemSelectionChanged()
 
     @Slot()
-    def on_btnSort_clicked(self):
+    def on_btnSort_clicked(self):  # pylint: disable=invalid-name
         self.ui.lstFiles.sortItems()
 
     @Slot()
-    def on_btnUp_clicked(self):
+    def on_btnUp_clicked(self):  # pylint: disable=invalid-name
         ind = self.ui.lstFiles.selectedIndexes()[0].row()
         itm = self.ui.lstFiles.takeItem(ind)
         ind -= 1
@@ -87,7 +89,7 @@ class CombineDialog(QDialog):
         self.ui.lstFiles.setCurrentRow(ind, QItemSelectionModel.SelectionFlag.ClearAndSelect)
 
     @Slot()
-    def on_btnDown_clicked(self):
+    def on_btnDown_clicked(self):  # pylint: disable=invalid-name
         ind = self.ui.lstFiles.selectedIndexes()[0].row()
         itm = self.ui.lstFiles.takeItem(ind)
         ind += 1
@@ -95,7 +97,7 @@ class CombineDialog(QDialog):
         self.ui.lstFiles.setCurrentRow(ind, QItemSelectionModel.SelectionFlag.ClearAndSelect)
 
     @Slot()
-    def on_lstFiles_itemSelectionChanged(self):
+    def on_lstFiles_itemSelectionChanged(self):  # pylint: disable=invalid-name
         if len(self.ui.lstFiles.selectedIndexes()) > 0:
             ind = self.ui.lstFiles.selectedIndexes()[0].row()
             self.ui.btnRemove.setEnabled(True)

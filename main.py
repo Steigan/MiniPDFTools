@@ -27,10 +27,10 @@ if __name__ == "__main__":
     w.show()
     if options.file:
         if len(options.file) == 1:
-            w.open(QUrl.fromLocalFile(options.file[0]))
+            w._open_or_combine_files(QUrl.fromLocalFile(options.file[0]))
         else:
             a.processEvents()
-            w.combine_files(options.file)
+            w._show_combine_files_dialog(options.file)
     # !!! For debugging !!!
     # w.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\test.pdf'))
     # w.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\source\Платежные документы КТК.pdf'))

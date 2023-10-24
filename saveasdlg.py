@@ -70,18 +70,16 @@ class SaveAsDialog(QDialog):
         # self.m_currentParams.censore = self.ui.chkCensore.isChecked()
         self.m_current_params.censore = self.ui.cmbCensore.currentIndex()
 
-    ############################################
-    # Обработка нажатия кнопки "Сохранить"
     @Slot()
     def save(self):
+        '''Обработка нажатия кнопки "Сохранить"'''
         self.update_params()
         self.m_current_params.save_params()
         # print(self.m_currentParams)
         self.hide()
 
-    ############################################
-    # Обработка выбора формата файла/файлов
     def format_checked(self, m_format):
+        '''Обработка выбора формата файла/файлов'''
         self.m_current_params.format = m_format
 
         fl_pdf = m_format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG)

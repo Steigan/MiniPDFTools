@@ -55,6 +55,18 @@ from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
 
+DIR_OUT = 0
+DIR_NW = 1
+DIR_N = 2
+DIR_NE = 3
+DIR_W = 4
+DIR_IN = 5
+DIR_E = 6
+DIR_SW = 7
+DIR_S = 8
+DIR_SE = 9
+
+
 def show_info_msg_box(parent, title: str, text: str):
     '''
     Функция выводит окно с информационным сообщением
@@ -77,14 +89,13 @@ def show_info_msg_box(parent, title: str, text: str):
 class SelectionRect:
     '''Класс для хранения данных о выделенных областях'''
 
-    def __init__(self, pno=-1):
+    def __init__(self, pno: int = -1):
         self.pno = pno
         self.r = QRect(0, 0, 0, 0)
         self.r_f = QRectF(0.0, 0.0, 0.0, 0.0)
         self.enabled = True
-        # self.selected = False
 
-    def get_rect(self):
+    def get_rect(self) -> QRect:
         '''Получить экранный QRect выделенной области
 
         Returns:
@@ -151,9 +162,8 @@ class SelectionRect:
         self.r.setY(round(self.r_f.y() * scr_h / eth_h))
         self.r.setWidth(round((self.r_f.x() + self.r_f.width()) * scr_w / eth_w) - self.r.x() - 1)
         self.r.setHeight(round((self.r_f.y() + self.r_f.height()) * scr_h / eth_h) - self.r.y() - 1)
-        return True
 
-    def get_scaled_rect(self, new_w: int, new_h: int, eth_w: int, eth_h: int):
+    def get_scaled_rect(self, new_w: int, new_h: int, eth_w: int, eth_h: int) -> QRect:
         '''Сформировать QRect в соответствии с указанным масштабом и "эталлонными"
         размерами выделенной области
 
@@ -183,7 +193,7 @@ class SelectionRect:
         '''
         self.r.setRect(pt1.x(), pt1.y(), pt2.x() - pt1.x(), pt2.y() - pt1.y())
 
-    def x1(self):
+    def x1(self) -> int:
         '''Получить координату X первого угла экранного QRect
 
         Returns:
@@ -191,7 +201,7 @@ class SelectionRect:
         '''
         return self.r.x()
 
-    def y1(self):
+    def y1(self) -> int:
         '''Получить координату Y первого угла экранного QRect
 
         Returns:
@@ -199,7 +209,7 @@ class SelectionRect:
         '''
         return self.r.y()
 
-    def x2(self):
+    def x2(self) -> int:
         '''Получить координату X второго угла экранного QRect
 
         Returns:
@@ -207,7 +217,7 @@ class SelectionRect:
         '''
         return self.r.x() + self.r.width()
 
-    def y2(self):
+    def y2(self) -> int:
         '''Получить координату Y второго угла экранного QRect
 
         Returns:
@@ -215,7 +225,7 @@ class SelectionRect:
         '''
         return self.r.y() + self.r.height()
 
-    def is_null(self):
+    def is_null(self) -> bool:
         '''Проверить выделенную область на соответствие минимальному размеру
 
         Returns:
@@ -223,7 +233,7 @@ class SelectionRect:
         '''
         return abs(self.r_f.width()) < 15 or abs(self.r_f.height()) < 15
 
-    def dir_rect(self, pt: QPoint):
+    def dir_rect(self, pt: QPoint) -> int:
         '''Получить номер угла выделенной области, находящийся в зоне "досягаемости"
         указанной точки (1, 3, 7, 9), или идентификатор иного участка области/экрана
         (5 - внутри области, 0 - за пределами области или область disabled)
@@ -242,35 +252,35 @@ class SelectionRect:
         '''
         # self.normalize()
         if not self.enabled:
-            return 0
+            return DIR_OUT
         r = self.r
         xc = (self.x1() + self.x2()) // 2
         yc = (self.y1() + self.y2()) // 2
         offs = 4
         if r.x() - offs < pt.x() < r.x() + offs:  # левая сторона
             if r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
-                return 1
-            elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
-                return 7
-            elif yc - offs < pt.y() < yc + offs:  # середина по вертикали
-                return 4
+                return DIR_NW
+            if r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
+                return DIR_SW
+            if yc - offs < pt.y() < yc + offs:  # середина по вертикали
+                return DIR_W
         elif r.right() - offs + 1 < pt.x() < r.right() + offs + 1:  # правая сторона
             if r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
-                return 3
-            elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
-                return 9
-            elif yc - offs < pt.y() < yc + offs:  # середина по вертикали
-                return 6
+                return DIR_NE
+            if r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
+                return DIR_SE
+            if yc - offs < pt.y() < yc + offs:  # середина по вертикали
+                return DIR_E
         elif r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
             if xc - offs < pt.x() < xc + offs:  # середина по горизонтали
-                return 2
+                return DIR_N
         elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
             if xc - offs < pt.x() < xc + offs:  # середина по горизонтали
-                return 8
+                return DIR_S
 
         if r.contains(pt):
-            return 5
-        return 0
+            return DIR_IN
+        return DIR_OUT
 
     def adjust_position(self, w: int, h: int):
         '''Проверить, укладывается ли выделенная область в размеры страницы, и сдвинуть ее
@@ -1212,14 +1222,19 @@ class ContainerWidget(QWidget):
                 r = self.parent_wg.selections[self.parent_wg.selected_rect]
                 dir_rect = r.dir_rect(pt)
                 if event.button() == Qt.MouseButton.LeftButton or dir_rect == 0:
-                    if dir_rect == 5:
+                    if dir_rect == DIR_IN:
                         self.parent_wg.move_mode = 2
                         self.parent_wg.set_selection_point(pt, 3)
 
-                    elif 0 < dir_rect < 10:
-                        if dir_rect == 4 or dir_rect == 6:
+                    elif dir_rect == DIR_OUT:
+                        self.parent_wg.selected_rect = -1
+                        self.parent_wg.rect_selected.emit(False)
+                        self.child_wg.update()
+
+                    else:
+                        if dir_rect in (DIR_W, DIR_E):
                             self.parent_wg.move_mode = 3
-                        elif dir_rect == 2 or dir_rect == 8:
+                        elif dir_rect in (DIR_N, DIR_S):
                             self.parent_wg.move_mode = 4
                         else:
                             self.parent_wg.move_mode = 1
@@ -1227,15 +1242,11 @@ class ContainerWidget(QWidget):
                         self.parent_wg.set_selection_point(pt, 10 + dir_rect)
                         # noinspection PyTypeChecker
                         self.setCursor(Qt.CursorShape.CrossCursor)
-                    else:
-                        self.parent_wg.selected_rect = -1
-                        self.parent_wg.rect_selected.emit(False)
-                        self.child_wg.update()
 
             if self.parent_wg.selected_rect == -1:
                 for i, r in enumerate(self.parent_wg.selections):
                     dir_rect = r.dir_rect(pt)
-                    if dir_rect == 5:
+                    if dir_rect == DIR_IN:
                         self.parent_wg.selected_rect = i
                         self.parent_wg.rect_selected.emit(True)
                         if event.button() == Qt.MouseButton.RightButton:
@@ -1267,45 +1278,50 @@ class ContainerWidget(QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        # Получаем координаты указателя мыши
         pt = self.child_wg.mapFromParent(event.pos())
-        if self.parent_wg.move_mode == 0:
-            fl = 0
-            for i, r in enumerate(self.parent_wg.selections):
-                dir_rect = r.dir_rect(pt)
-                if i == self.parent_wg.selected_rect:
-                    if dir_rect == 5:
-                        fl = 2
-                        break
-                    if dir_rect in [1, 9]:
-                        fl = 3
-                        break
-                    if dir_rect in [3, 7]:
-                        fl = 4
-                        break
-                    if dir_rect in [2, 8]:
-                        fl = 5
-                        break
-                    if dir_rect in [4, 6]:
-                        fl = 6
-                        break
-                else:
-                    if dir_rect == 5:
-                        fl = 1
 
-            if fl:
-                # noinspection PyTypeChecker
-                self.setCursor(
-                    (
-                        Qt.CursorShape.PointingHandCursor,  # 1
-                        Qt.CursorShape.SizeAllCursor,  # 2
-                        Qt.CursorShape.SizeFDiagCursor,  # 3
-                        Qt.CursorShape.SizeBDiagCursor,  # 4
-                        Qt.CursorShape.SizeVerCursor,  # 5
-                        Qt.CursorShape.SizeHorCursor,  # 6
-                    )[fl - 1]
-                )
-            else:
+        # Не находимся в режиме перемещения или изменения размера выделенной области?
+        if self.parent_wg.move_mode == 0:
+            # По умолчанию такое вот значение
+            cursor_shape = Qt.CursorShape.BlankCursor
+
+            # Перебираем все выделенные области
+            for i, r in enumerate(self.parent_wg.selections):
+                # Определяем местоположение указателя мыши по отношению к этой выделенной области
+                dir_rect = r.dir_rect(pt)
+
+                # Если указательза пределами выделенной области, то пропускаем итерацию
+                if dir_rect == DIR_OUT:
+                    continue
+
+                # Это активная выделенная область?
+                if i == self.parent_wg.selected_rect:
+                    # Выбираем вид курсора в зависимости от участка, где находится указатель мыши
+                    cursor_shape = (
+                        Qt.CursorShape.SizeFDiagCursor,  # NW
+                        Qt.CursorShape.SizeVerCursor,  # N
+                        Qt.CursorShape.SizeBDiagCursor,  # NE
+                        Qt.CursorShape.SizeHorCursor,  # W
+                        Qt.CursorShape.SizeAllCursor,  # IN
+                        Qt.CursorShape.SizeHorCursor,  # E
+                        Qt.CursorShape.SizeBDiagCursor,  # SW
+                        Qt.CursorShape.SizeVerCursor,  # S
+                        Qt.CursorShape.SizeFDiagCursor,  # SE
+                    )[dir_rect - 1]
+
+                    # Прекращаем обход
+                    break
+
+                # Если под указателем нашлась какая-нибудь неактивная выделенная область,
+                # то меняем значение по умолчанию на PointingHandCursor
+                if dir_rect == DIR_IN:
+                    cursor_shape = Qt.CursorShape.PointingHandCursor
+
+            if cursor_shape == Qt.CursorShape.BlankCursor:
                 self.unsetCursor()
+            else:
+                self.setCursor(cursor_shape)
         elif self.parent_wg.move_mode == 1:  # двигаем угол
             self.parent_wg.set_selection_point(pt, 2)
         elif self.parent_wg.move_mode == 2:  # двигаем всю область
@@ -1359,7 +1375,7 @@ class ContainerWidget(QWidget):
             self.parent().wheelEvent(wheelEvent)
 
 
-class PageWidget(QLabel):
+class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
     '''Виджет для отображения страницы файла PDF'''
 
     def __init__(self, parent: ContainerWidget = None, scrollWidget: SiaPdfView = None):

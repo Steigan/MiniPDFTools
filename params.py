@@ -1,9 +1,15 @@
+'''Параметры сохранения документа'''
+
 import enum
 
 from PySide2.QtCore import QSettings
 
+import const
+
 
 class FileFormat(enum.IntEnum):
+    '''Форматы файлов'''
+
     FMT_PDF = 0
     FMT_PDF_JPEG = 1
     FMT_JPEG = 2
@@ -11,31 +17,29 @@ class FileFormat(enum.IntEnum):
 
 
 class PageMode(enum.IntEnum):
+    '''Варианты выбора страниц'''
+
     PG_ALL = 0
     PG_CURRENT = 1
     PG_RANGE = 2
 
 
 class PageRotation(enum.IntEnum):
+    '''Варианты вращения страницы'''
+
     RT_NONE = 0
     RT_LEFT = 1
     RT_RIGHT = 2
     RT_180 = 3
 
 
-class SaveParams:
+class SaveParams:  # pylint: disable=too-many-instance-attributes
+    '''Настройки сохранения документа'''
+
     def __init__(self):
-        # self.format = FileFormat.fmtPDFjpeg
-        # self.pgmode = PageMode.pgCurrent
-        # self.pgrange = "1-10,1"
-        # self.dpi = 300
-        # self.quality = 80
-        # self.singles = True
+        # Считывание настроек
+        settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
 
-        settings = QSettings('Steigan', 'Mini PDF Tools')
-
-        # self.format = settings.value('format', FileFormat.fmtPDF)
-        # self.pgmode = settings.value('pgmode', PageMode.pgAll)
         # noinspection PyBroadException
         try:
             self.format = FileFormat(int(settings.value('format', '0')))
@@ -64,7 +68,8 @@ class SaveParams:
         self.setselectionsonly = False
 
     def save_params(self):
-        settings = QSettings('Steigan', 'Mini PDF Tools')
+        '''Сохранение настроек'''
+        settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
         settings.setValue('format', str(self.format.value))
         settings.setValue('format_censore', str(self.format_censore.value))
         settings.setValue('pgmode', str(self.pgmode.value))

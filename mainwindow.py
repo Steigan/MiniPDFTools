@@ -30,6 +30,7 @@ from PySide2.QtWidgets import QSpinBox
 from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
+import const
 from censoredlg import CensoreDialog
 from combinedlg import CombineDialog
 from mainwindow_ui import Ui_MainWindow
@@ -43,7 +44,7 @@ from siapdfview import ZoomSelector
 from tableanalize import parse_page_tables
 
 
-ABOUT_TEXT = """
+ABOUT_TEXT = '''
 Mini PDF Tools - мини набор инструментов для просмотра и обработки файлов PDF.
 Версия от 23.10.2023 (c) 2023 Игорь Степаненков
 
@@ -55,12 +56,13 @@ XlsxWriter (c) 2013-2023 John McNamara
 PyZBar (c) 2022 Lawrence Hudson
 PyTesseract for Google's Tesseract-OCR Engine (c) 2022 Samuel Hoffstaetter
 Paomedia Small & Flat Icons
-"""
+'''
 
 
 class MyQSpinBox(QSpinBox):
+    '''Виджет для поля выбора номера страницы'''
+
     def __init__(self, wg):
-        # self.wg = wg
         super().__init__(wg)
 
     def keyPressEvent(self, e):
@@ -69,166 +71,180 @@ class MyQSpinBox(QSpinBox):
             super().keyPressEvent(e)
 
 
-# noinspection PyBroadException,PyProtectedMember
-class MainWindow(QMainWindow):
-    def __init__(self, parent=None):
+class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    '''Главное окно программы'''
+
+    def __init__(self, parent=None):  # pylint: disable=too-many-statements
         super().__init__(parent)
         self.ui = Ui_MainWindow()
-        self._zoom_selector = ZoomSelector(self)
-        self._page_selector = MyQSpinBox(self)
-        self._msg_box = QMessageBox(self)
+        self.ui.setupUi(self)
+        self.ui.zoom_selector = ZoomSelector(self)
+        self.ui.zoom_selector.setMaximumWidth(150)
+        self.ui.page_selector = MyQSpinBox(self)
+        self.ui.msg_box = QMessageBox(self)
+
         self._current_filename = ''
         self._real_file = False
         self._title = ''
-        self._valid_extensions = [
-            '.pdf',
-            '.png',
-            '.jpg',
-            '.jpeg',
-            '.tif',
-            '.tiff',
-            '.bmp',
-            '.epub',
-            '.xps',
-            '.oxps',
-            '.cbz',
-            '.fb2',
-        ]
-        config = configparser.ConfigParser()
+
+        # Загружаем настройки для запуска внешних приложений
         config = configparser.ConfigParser()
         try:
-            config.read(os.path.join(os.path.dirname(__file__), 'settings.ini'))
-            self._tesseract_cmd = config.get("Settings", "tesseract_cmd", fallback="")
-            self._pdfviewer_cmd = config.get("Settings", "pdfviewer_cmd", fallback="")
-            self._xlseditor_cmd = config.get("Settings", "xlseditor_cmd", fallback="")
+            config.read(os.path.join(os.path.dirname(__file__), const.SETTINGS_FILENAME))
+            self._tesseract_cmd = config.get(const.SETTINGS_SECTION, 'tesseract_cmd', fallback='')
+            self._pdfviewer_cmd = config.get(const.SETTINGS_SECTION, 'pdfviewer_cmd', fallback='')
+            self._xlseditor_cmd = config.get(const.SETTINGS_SECTION, 'xlseditor_cmd', fallback='')
         except configparser.Error:
-            self._tesseract_cmd = ""
-            self._pdfviewer_cmd = ""
-            self._xlseditor_cmd = ""
+            self._tesseract_cmd = ''
+            self._pdfviewer_cmd = ''
+            self._xlseditor_cmd = ''
 
-        self.ui.setupUi(self)
-
+        # Задаем минимальный размер окна
         self.setMinimumSize(500, 400)
 
+        # Настраиваем панель состояния
         self.statusBar().showMessage('')
-        self.progress_bar = QProgressBar()
-        self.statusBar().addPermanentWidget(self.progress_bar)
-        self.progress_bar.setGeometry(30, 40, 200, 20)
-        # self.statusBar().showMessage('Процесс')
-        # self.progressBar.setValue(50)
-        self.progress_bar.setVisible(False)
+        self.ui.progress_bar = QProgressBar()
+        self.statusBar().addPermanentWidget(self.ui.progress_bar)
+        self.ui.progress_bar.setGeometry(30, 40, 200, 20)
+        self.ui.progress_bar.setVisible(False)
 
-        self._zoom_selector.setMaximumWidth(150)
         # Вставляем zoomSelector перед actionZoom_In
-        self.ui.mainToolBar.insertWidget(self.ui.actionZoom_In, self._zoom_selector)
+        self.ui.mainToolBar.insertWidget(self.ui.actionZoom_In, self.ui.zoom_selector)
 
         # Вставляем pageSelector перед actionForward
-        self.ui.mainToolBar.insertWidget(self.ui.actionNext_Page, self._page_selector)
-        self._page_selector.setEnabled(False)
-        self._page_selector.valueChanged.connect(self.page_selected)
-        self._page_selector.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self._page_selector.setSuffix(' из 0')
-        self._page_selector.setMinimumWidth(70)
-        # noinspection PyTypeChecker
-        self._page_selector.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.ui.mainToolBar.insertWidget(self.ui.actionNext_Page, self.ui.page_selector)
+        self.ui.page_selector.setEnabled(False)
+        self.ui.page_selector.valueChanged.connect(self._change_page)
+        self.ui.page_selector.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.ui.page_selector.setSuffix(' из 0')
+        self.ui.page_selector.setMinimumWidth(70)
+        self.ui.page_selector.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
+        # Создаем виджет для области просмотра документа
         self.pdf_view = SiaPdfView(self)
         self.setCentralWidget(self.pdf_view)
-        # self.centralWidget(). insertWidget(self.centralWidget(), self.pdfView)
-        # self.centralWidget().setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        # self.centralWidget().setLayout(Qt.QLay)
 
-        self.pdf_view.current_page_changed.connect(self.page_select)
-        self.pdf_view.rect_selected.connect(self.rect_selected)
-        self.pdf_view.zoom_factor_changed.connect(self._zoom_selector.set_zoom_factor)
+        # Привязываем обработчики событий, поступивших от области просмотра документа
+        self.pdf_view.current_page_changed.connect(self._change_page_number)
+        self.pdf_view.rect_selected.connect(self._process_rect_selection)
+        self.pdf_view.zoom_factor_changed.connect(self.ui.zoom_selector.set_zoom_factor)
 
-        # self.m_zoomSelector.zoom_mode_changed.connect(self.pdfView.setZoomMode)
-        self._zoom_selector.zoom_factor_changed.connect(self.pdf_view.set_zoom_factor)
-        self._zoom_selector.reset()
+        # Привязываем обработчик изменения значения зум-фактора в панели инструментов
+        self.ui.zoom_selector.zoom_factor_changed.connect(self.pdf_view.set_zoom_factor)
+        self.ui.zoom_selector.reset()
 
+        # Привязываем обработчик вывода контекстного меню для области просмотра документа
         self.pdf_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.pdf_view.customContextMenuRequested.connect(self.show_context_menu)
-        self.pop_menu = QMenu(self)
-        self.pop_menu.addAction(self.ui.actionCbdRectTextCopy)
-        self.pop_menu.addAction(self.ui.actionCbdRectTextTrimCopy)
-        self.pop_menu.addSeparator()
-        self.pop_menu.addAction(self.ui.actionCbdRectImageCopy)
-        self.pop_menu.addAction(self.ui.actionCbdPageImageCopy)
-        self.pop_menu.addSeparator()
+        self.pdf_view.customContextMenuRequested.connect(self._show_context_menu)
+
+        # Создаем контекстное меню
+        pop_menu = QMenu(self)
+        pop_menu.addAction(self.ui.actionCbdRectTextCopy)
+        pop_menu.addAction(self.ui.actionCbdRectTextTrimCopy)
+        pop_menu.addSeparator()
+        pop_menu.addAction(self.ui.actionCbdRectImageCopy)
+        pop_menu.addAction(self.ui.actionCbdPageImageCopy)
+        pop_menu.addSeparator()
+        # Если указан путь к Tesseract OCR
         if self._tesseract_cmd:
-            self.pop_menu.addAction(self.ui.actionRectRecognizeText)
-            self.pop_menu.addAction(self.ui.actionRectRecognizeTextTrim)
-            self.pop_menu.addSeparator()
+            pop_menu.addAction(self.ui.actionRectRecognizeText)
+            pop_menu.addAction(self.ui.actionRectRecognizeTextTrim)
+            pop_menu.addSeparator()
         else:
             self.ui.actionRectRecognizeText.setVisible(False)
             self.ui.actionRectRecognizeTextTrim.setVisible(False)
             self.ui.menuView.setSeparatorsCollapsible(True)
-        self.pop_menu.addAction(self.ui.actionRectRecognizeQR)
-        self.pop_menu.addSeparator()
-        self.pop_menu.addAction(self.ui.actionCbdRectsInfoCopy)
-        self.pop_menu.addAction(self.ui.actionCbdRectsAllInfoCopy)
-        self.pop_menu.addSeparator()
-        self.pop_menu.addAction(self.ui.actionRectMode)
-        self.pop_menu.addSeparator()
-        self.pop_menu.addAction(self.ui.actionSelectAll)
-        self.pop_menu.addAction(self.ui.actionRemoveSelection)
-        self.pop_menu.addAction(self.ui.actionRemoveAllSelections)
-        # self.popMenu.addSeparator().setText("Alternate Shaders")
-        # self.popMenu.addAction(QAction('Blinn', self))
-        # self.popMenu.addAction(QAction('Phong', self))
+        pop_menu.addAction(self.ui.actionRectRecognizeQR)
+        pop_menu.addSeparator()
+        pop_menu.addAction(self.ui.actionCbdRectsInfoCopy)
+        pop_menu.addAction(self.ui.actionCbdRectsAllInfoCopy)
+        pop_menu.addSeparator()
+        pop_menu.addAction(self.ui.actionRectMode)
+        pop_menu.addSeparator()
+        pop_menu.addAction(self.ui.actionSelectAll)
+        pop_menu.addAction(self.ui.actionRemoveSelection)
+        pop_menu.addAction(self.ui.actionRemoveAllSelections)
+        self.ui.pop_menu = pop_menu
 
-        # self.ui.actionCbdPageImageCopy.connect(self.pdfView.copyPageImageToClipboard)
-        # self.ui.actionCbdRectImageCopy.connect(self.pdfView.copyRectImageToClipboard)
-        # self.ui.actionCbdRectImageCopy.connect(self.pdfView.copyRectTextToClipboard)
-
+        # Включаем прием файлов с применением DragAndDrop
         self.setAcceptDrops(True)
+        # Максимизируем окно
         self.showMaximized()
+        # Устанавливаем фокус на область просмотра документа
         self.pdf_view.setFocus()
         # Для наилучшего распознания текстового слоя...
         fitz.Tools().set_small_glyph_heights(True)
 
-    @Slot(bool)
-    def rect_selected(self, selected):
-        self.ui.actionCbdRectTextCopy.setEnabled(selected)
-        self.ui.actionCbdRectTextTrimCopy.setEnabled(selected)
-        self.ui.actionCbdRectImageCopy.setEnabled(selected)
-        self.ui.actionRemoveSelection.setEnabled(selected)
-        self.ui.actionRectMode.setEnabled(selected)
-        if self.ui.actionRectRecognizeText.isVisible():
-            self.ui.actionRectRecognizeText.setEnabled(selected)
-            self.ui.actionRectRecognizeTextTrim.setEnabled(selected)
-        self.ui.actionRectRecognizeQR.setEnabled(selected)
-        self.ui.actionCbdRectsInfoCopy.setEnabled(self.pdf_view.selections_count > 0)
-        fl = self.pdf_view.selections_all_count > 0
-        self.ui.actionCbdRectsAllInfoCopy.setEnabled(fl)
-        self.ui.actionRemoveAllSelections.setEnabled(fl)
+    def _process_rect_selection(self, selected: bool):
+        '''Обработчик изменения количества выделенных областей и наличия активного выделения'''
 
-    def show_context_menu(self, position):
+        # Переключаем доступность элементов интерфейса в зависимости от наличия активного выделения
+        for widget in (
+            [
+                self.ui.actionCbdRectTextCopy,
+                self.ui.actionCbdRectTextTrimCopy,
+                self.ui.actionCbdRectImageCopy,
+                self.ui.actionRemoveSelection,
+                self.ui.actionRectMode,
+                self.ui.actionRectRecognizeQR,
+            ]
+            + [self.ui.actionRectRecognizeText, self.ui.actionRectRecognizeTextTrim]
+            if self.ui.actionRectRecognizeText.isVisible()
+            else []
+        ):
+            widget.setEnabled(selected)
+
+        # Переключаем доступность элементов интерфейса в зависимости от наличия выделений на текущей странице
+        self.ui.actionCbdRectsInfoCopy.setEnabled(self.pdf_view.selections_count > 0)
+
+        # Переключаем доступность элементов интерфейса в зависимости от наличия выделений во всем документе
+        is_selections_exists = self.pdf_view.selections_all_count > 0
+        for widget in [self.ui.actionCbdRectsAllInfoCopy, self.ui.actionRemoveAllSelections]:
+            widget.setEnabled(is_selections_exists)
+
+    def _show_context_menu(self, position):
+        '''Вывод контекстного меню (если файл открыт)'''
+
         if self.pdf_view.current_page > -1:
-            self.pop_menu.exec_(self.pdf_view.mapToGlobal(position))
+            self.ui.pop_menu.exec_(self.pdf_view.mapToGlobal(position))
 
     def dragEnterEvent(self, event):
+        '''Обработчик события DragEnter'''
+
+        # Проверяем формат перетаскиваемого объекта
         if event.mimeData().hasFormat('text/uri-list'):
+            # Подтверждаем готовность принять объект
             event.acceptProposedAction()
 
     def dropEvent(self, event):
+        '''Обработчик события Drop'''
+
+        # Получаем список ссылок
         url_list = event.mimeData().urls()
+        # Если больше одной, то обрабатываем список
         if len(url_list) > 1:
+            # Собираем список подходящих файлов из полученного списка ссылок
             filelist = [
                 url.toLocalFile()
                 for url in url_list
-                if url.isLocalFile() and os.path.splitext(url.toLocalFile())[1].lower() in self._valid_extensions
+                if url.isLocalFile() and os.path.splitext(url.toLocalFile())[1].lower() in const.VALID_EXTENSIONS
             ]
+            # Если список файлов непустой, запускаем интерфейс объединения файлов
             if filelist:
-                self.combine_files(filelist)
+                self._show_combine_files_dialog(filelist)
         else:
+            # Если это правильная ссылка, запускаем открытие файла
             to_open = url_list[0]
             if to_open.isValid():
-                self.open(to_open)
+                self._open_or_combine_files(to_open)
+
+        # Подтверждаем принятие объекта
         event.acceptProposedAction()
 
-    @Slot(QUrl)
-    def open(self, doc_location, files_list=None):
+    def _open_or_combine_files(self, doc_location, files_list=None):
+        '''Открыть файл или объединить несколько файлов в один и открыть его'''
+
         if files_list is None:
             files_list = []
         if doc_location == '' or doc_location.isLocalFile():
@@ -236,81 +252,88 @@ class MainWindow(QMainWindow):
                 self._real_file = True
                 self._current_filename = doc_location.toLocalFile()
                 self.pdf_view.open(self._current_filename)
-                ok_fl = self.pdf_view.page_count > 0
+                is_file_opened = self.pdf_view.page_count > 0
             elif files_list:
                 self._real_file = False
                 self._current_filename = '*** Результат объединения файлов ***'
                 self.pdf_view.combine(files_list)
-                ok_fl = self.pdf_view.page_count > 0
+                is_file_opened = self.pdf_view.page_count > 0
             else:
-                ok_fl = False
-            document_title = "Mini PDF Tools"
-            # self.setWindowFilePath(self.m_currentFileName)
-            if ok_fl:
-                self.setWindowTitle(document_title + ' - ' + self._current_filename)
-                self._page_selector.setRange(1, self.pdf_view.page_count)
-                self._page_selector.setSuffix(f' из {self.pdf_view.page_count}')
-                self.page_selected(1)
+                is_file_opened = False
+
+            if is_file_opened:
+                self.setWindowTitle(const.APP_TITLE + ' - ' + self._current_filename)
+                self.ui.page_selector.setRange(1, self.pdf_view.page_count)
+                self.ui.page_selector.setSuffix(f' из {self.pdf_view.page_count}')
+                self._change_page(1)
                 if self._real_file:
-                    settings = QSettings('Steigan', 'Mini PDF Tools')
+                    settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
                     settings.setValue('lastfilename', self._current_filename)
             else:
-                self.setWindowTitle(document_title)
-                self._page_selector.setRange(0, 1)
-                self._page_selector.setSuffix(' из 0')
-                self._page_selector.setValue(0)
+                self.setWindowTitle(const.APP_TITLE)
+                self.ui.page_selector.setRange(0, 1)
+                self.ui.page_selector.setSuffix(' из 0')
+                self.ui.page_selector.setValue(0)
 
-            self._page_selector.setEnabled(ok_fl)
-            self._zoom_selector.setEnabled(ok_fl)
-            self.ui.actionZoom_In.setEnabled(ok_fl)
-            self.ui.actionZoom_Out.setEnabled(ok_fl)
-            self.ui.actionZoom_Normal.setEnabled(ok_fl)
-            self.ui.actionSaveAs.setEnabled(ok_fl)
-            self.ui.actionClose.setEnabled(ok_fl)
-            self.ui.actionTablesAnalizeStrong.setEnabled(ok_fl)
-            self.ui.actionTablesAnalizeSimple.setEnabled(ok_fl)
-            self.ui.actionPDexport.setEnabled(ok_fl)
-            self.ui.actionPDexportQR.setEnabled(ok_fl)
-            self.ui.actionCensore.setEnabled(ok_fl)
-            self.ui.actionCbdPageImageCopy.setEnabled(ok_fl)
-            self.ui.actionSelectAll.setEnabled(ok_fl)
+            # Переключаем доступность элементов интерфейса в зависимости от
+            # наличия открытого файла
+            for widget in [
+                self.ui.page_selector,
+                self.ui.zoom_selector,
+                self.ui.actionZoom_In,
+                self.ui.actionZoom_Out,
+                self.ui.actionZoom_Normal,
+                self.ui.actionSaveAs,
+                self.ui.actionClose,
+                self.ui.actionTablesAnalizeStrong,
+                self.ui.actionTablesAnalizeSimple,
+                self.ui.actionPDexport,
+                self.ui.actionPDexportQR,
+                self.ui.actionCensore,
+                self.ui.actionCbdPageImageCopy,
+                self.ui.actionSelectAll,
+                self.ui.actionPageRotateLeft,
+                self.ui.actionPageRotateRight,
+                self.ui.actionPageRotate180,
+                self.ui.actionPagesRotateLeft,
+                self.ui.actionPagesRotateRight,
+                self.ui.actionPagesRotate180,
+            ]:
+                widget.setEnabled(is_file_opened)
             self.ui.actionRemoveAllSelections.setEnabled(False)
-
-            self.ui.actionPageRotateLeft.setEnabled(ok_fl)
-            self.ui.actionPageRotateRight.setEnabled(ok_fl)
-            self.ui.actionPageRotate180.setEnabled(ok_fl)
-            self.ui.actionPagesRotateLeft.setEnabled(ok_fl)
-            self.ui.actionPagesRotateRight.setEnabled(ok_fl)
-            self.ui.actionPagesRotate180.setEnabled(ok_fl)
         else:
             message = f"{doc_location} не является локальным файлом"
             print(message, file=sys.stderr)
             QMessageBox.critical(self, "Открыть не удалось", message)
 
-    @Slot(int)
-    def page_selected(self, page):
-        # print(page)
+    def _change_page(self, page):
+        '''Обработчик события смены номера страницы, полученного от панели инструментов'''
+
+        # Переключаем доступность элементов интерфейса в зависимости от номера страницы
         self.ui.actionPrevious_Page.setEnabled(page > 1)
         self.ui.actionHome.setEnabled(page > 1)
         self.ui.actionNext_Page.setEnabled(page < self.pdf_view.page_count)
         self.ui.actionEnd.setEnabled(page < self.pdf_view.page_count)
+
+        # Меняем страницу в области просмотра документа
         if 0 < page <= self.pdf_view.page_count:
             self.pdf_view.goto_page(page - 1)
 
-    @Slot(int)
-    def page_select(self, val):
-        self._page_selector.setValue(val + 1)
+    def _change_page_number(self, val):
+        '''Обработчик события смены номера страницы, полученного от области просмотра документа'''
+        self.ui.page_selector.setValue(val + 1)
 
-    def combine_files(self, filelist: list):
-        dlg = CombineDialog(self, filelist, self._valid_extensions)
+    def _show_combine_files_dialog(self, filelist: list):
+        '''Вывод диалога объединения файлов и запуск обработки результата'''
+        dlg = CombineDialog(self, filelist, const.VALID_EXTENSIONS)
         if dlg.exec_():
             # noinspection PyTypeChecker
-            self.open('', dlg.getFilelist())
+            self._open_or_combine_files('', dlg.get_filelist())
 
     @Slot()
     def on_actionNew_triggered(self):  # pylint: disable=invalid-name
-        self.combine_files([])
-        # settings = QSettings('Steigan', 'Mini PDF Tools')
+        self._show_combine_files_dialog([])
+        # settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
         # lastfn = settings.value('lastfilename', '')
 
         # directory = os.path.dirname(lastfn)
@@ -322,43 +345,40 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def on_actionOpen_triggered(self):  # pylint: disable=invalid-name
-        settings = QSettings('Steigan', 'Mini PDF Tools')
+        settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
         lastfn = settings.value('lastfilename', '')
-
-        # QMessageBox.information(self, 'Info', lastfn)
 
         directory = os.path.dirname(lastfn)
         to_open, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите файл PDF",
             directory,
-            f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in self._valid_extensions).strip()})",
+            f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in const.VALID_EXTENSIONS).strip()})",
         )
-        # if to_open.isValid():
         if to_open:
-            self.open(QUrl.fromLocalFile(to_open))
+            self._open_or_combine_files(QUrl.fromLocalFile(to_open))
 
     @Slot()
     def on_actionClose_triggered(self):  # pylint: disable=invalid-name
         self.pdf_view.close()
         # noinspection PyTypeChecker
-        self.open('')
+        self._open_or_combine_files('')
 
-    def check_new_file(self, outfile, ext, ind, overwrite_all):
+    def _check_new_file(self, outfile, ext, ind, overwrite_all):
         if ind < 10000:
             fn = f'{outfile}-%04i{ext}' % ind
         else:
             fn = f'{outfile}-{ind}{ext}'
         if not overwrite_all and os.path.exists(fn):
-            self._msg_box.setText(f'Файл \'{fn}\' уже существует. Перезаписать поверх?')
-            res = self._msg_box.exec()
+            self.ui.msg_box.setText(f'Файл \'{fn}\' уже существует. Перезаписать поверх?')
+            res = self.ui.msg_box.exec()
             if (res == QMessageBox.StandardButton.No) or (res == QMessageBox.StandardButton.Cancel):
                 fn = ''
             return fn, (res == QMessageBox.StandardButton.YesToAll), (res == QMessageBox.StandardButton.Cancel)
         else:
             return fn, overwrite_all, False
 
-    def show_save_error_msg(self, e):
+    def _show_save_error_msg(self, e):
         m_msg_box = QMessageBox(self)
         m_msg_box.setIcon(QMessageBox.Icon.Warning)
         m_msg_box.setWindowTitle(self._title)
@@ -370,8 +390,8 @@ class MainWindow(QMainWindow):
         res = m_msg_box.exec()
         return res
 
-    def censore_page(self, doc, pno: int, p: SaveParams):  # noqa: ignore=C901
-        """Деперсонификация одной страницы файла PDF
+    def _censore_page(self, doc, pno: int, p: SaveParams):  # noqa: ignore=C901
+        '''Деперсонификация одной страницы файла PDF
 
         Args:
             doc (fitz doc): документ PDF
@@ -380,7 +400,7 @@ class MainWindow(QMainWindow):
 
         Returns:
             (Pixmap): результат рендеринга и деперсонификации
-        """
+        '''
 
         zoom = p.dpi / 72
         mat = fitz.Matrix(zoom, zoom)
@@ -651,7 +671,7 @@ class MainWindow(QMainWindow):
             pix = fitz.Pixmap(fitz.csRGB, img.size[0], img.size[1], samples)
             return pix
 
-    def saveas_process(self, p: SaveParams, censore: bool):  # noqa: ignore=C901
+    def _saveas_process(self, p: SaveParams, censore: bool):  # noqa: ignore=C901
         if censore:
             self._title = 'Деперсонификация данных'
         else:
@@ -691,25 +711,25 @@ class MainWindow(QMainWindow):
 
         if p.setselectionsonly:
             if self.pdf_view.selections_all_count > 0:
-                self._msg_box.setIcon(QMessageBox.Icon.Question)
-                self._msg_box.setWindowTitle(self._title)
-                self._msg_box.setStandardButtons(
+                self.ui.msg_box.setIcon(QMessageBox.Icon.Question)
+                self.ui.msg_box.setWindowTitle(self._title)
+                self.ui.msg_box.setStandardButtons(
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
                 )
-                self._msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
-                self._msg_box.button(QMessageBox.StandardButton.Yes).setText('  Да  ')
-                self._msg_box.button(QMessageBox.StandardButton.No).setText('  Нет  ')
-                self._msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
-                self._msg_box.setText('Документ уже содержит выделенные области. Очистить их?')
-                res = self._msg_box.exec()
+                self.ui.msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+                self.ui.msg_box.button(QMessageBox.StandardButton.Yes).setText('  Да  ')
+                self.ui.msg_box.button(QMessageBox.StandardButton.No).setText('  Нет  ')
+                self.ui.msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
+                self.ui.msg_box.setText('Документ уже содержит выделенные области. Очистить их?')
+                res = self.ui.msg_box.exec()
                 if res == QMessageBox.StandardButton.Cancel:
                     return
                 elif res == QMessageBox.StandardButton.Yes:
                     self.pdf_view.remove_selection(True)
 
             self.statusBar().showMessage('Поиск и выделение персональных данных...')
-            self.progress_bar.setValue(0)
-            self.progress_bar.setVisible(True)
+            self.ui.progress_bar.setValue(0)
+            self.ui.progress_bar.setVisible(True)
             self.setDisabled(True)
             QApplication.processEvents()
             ind = 0
@@ -717,12 +737,12 @@ class MainWindow(QMainWindow):
             for pages in pageranges:
                 for pno in pages:
                     if 0 <= pno < doc.page_count:
-                        self.censore_page(doc=doc, pno=pno, p=p)
+                        self._censore_page(doc=doc, pno=pno, p=p)
                         ind += 1
-                        self.progress_bar.setValue(ind * 100 // approx_pgcount)
+                        self.ui.progress_bar.setValue(ind * 100 // approx_pgcount)
                         QApplication.processEvents()
 
-            self.rect_selected(self.pdf_view.selected_rect > -1)
+            self._process_rect_selection(self.pdf_view.selected_rect > -1)
             return
 
         # outfile, _ = os.path.splitext(self.m_currentFileName)
@@ -764,8 +784,8 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage('Сохранение файла/файлов...')
-        self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(True)
+        self.ui.progress_bar.setValue(0)
+        self.ui.progress_bar.setVisible(True)
         self.setDisabled(True)
         QApplication.processEvents()
 
@@ -779,19 +799,19 @@ class MainWindow(QMainWindow):
             pdfout = fitz.open()
         ind = 0
 
-        self._msg_box.setIcon(QMessageBox.Icon.Question)
-        self._msg_box.setWindowTitle(self._title)
-        self._msg_box.setStandardButtons(
+        self.ui.msg_box.setIcon(QMessageBox.Icon.Question)
+        self.ui.msg_box.setWindowTitle(self._title)
+        self.ui.msg_box.setStandardButtons(
             QMessageBox.StandardButton.Yes
             | QMessageBox.StandardButton.YesToAll
             | QMessageBox.StandardButton.No
             | QMessageBox.StandardButton.Cancel
         )
-        self._msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
-        self._msg_box.button(QMessageBox.StandardButton.Yes).setText('  Да  ')
-        self._msg_box.button(QMessageBox.StandardButton.YesToAll).setText('  Да для всех  ')
-        self._msg_box.button(QMessageBox.StandardButton.No).setText('  Нет  ')
-        self._msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
+        self.ui.msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+        self.ui.msg_box.button(QMessageBox.StandardButton.Yes).setText('  Да  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.YesToAll).setText('  Да для всех  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.No).setText('  Нет  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
 
         # Эксклюзивный режим ...
         if (
@@ -822,7 +842,7 @@ class MainWindow(QMainWindow):
                 # if p.rotation != PageRotation.rtNone:
                 # Пытаемся повернуть страницу в соответствии с отображаемым на экране объектом
                 doc[pno].set_rotation((self.pdf_view.m_doc[pno].rotation + (0, 270, 90, 180)[p.rotation.value]) % 360)
-                self.progress_bar.setValue(pno * 95 // approx_pgcount)
+                self.ui.progress_bar.setValue(pno * 95 // approx_pgcount)
                 QApplication.processEvents()
             try:
                 doc.save(
@@ -842,7 +862,7 @@ class MainWindow(QMainWindow):
                     if 0 <= pno < doc.page_count:
                         ind += 1
 
-                        self.progress_bar.setValue(ind * 100 // approx_pgcount)
+                        self.ui.progress_bar.setValue(ind * 100 // approx_pgcount)
                         QApplication.processEvents()
 
                         old_rot = doc[pno].rotation
@@ -856,7 +876,7 @@ class MainWindow(QMainWindow):
                                     newdoc = fitz.open()
                                     newdoc.insert_pdf(doc, from_page=pno, to_page=pno)
 
-                                    fn, overwrite_all, abort = self.check_new_file(outfile, ext, ind, overwrite_all)
+                                    fn, overwrite_all, abort = self._check_new_file(outfile, ext, ind, overwrite_all)
                                     if abort:
                                         raise FileNotFoundError('Файл для записи не определен')
                                     if fn:
@@ -870,7 +890,7 @@ class MainWindow(QMainWindow):
                                                 deflate_fonts=True,
                                             )
                                         except Exception as e:
-                                            if self.show_save_error_msg(e) == QMessageBox.StandardButton.Cancel:
+                                            if self._show_save_error_msg(e) == QMessageBox.StandardButton.Cancel:
                                                 newdoc.close()
                                                 raise
                                     newdoc.close()
@@ -885,7 +905,7 @@ class MainWindow(QMainWindow):
                             else:
                                 page = doc[pno]
                                 if censore:
-                                    pix = self.censore_page(doc=doc, pno=pno, p=p)
+                                    pix = self._censore_page(doc=doc, pno=pno, p=p)
                                 else:
                                     # Растеризуем страницу и запихиваем изображение в PIL
                                     pix = page.get_pixmap(matrix=mat)
@@ -942,7 +962,9 @@ class MainWindow(QMainWindow):
                                         opage = newdoc.new_page(width=page.rect.width, height=page.rect.height)
                                         opage.insert_image(opage.rect, stream=temp)
 
-                                        fn, overwrite_all, abort = self.check_new_file(outfile, ext, ind, overwrite_all)
+                                        fn, overwrite_all, abort = self._check_new_file(
+                                            outfile, ext, ind, overwrite_all
+                                        )
                                         if abort:
                                             raise FileNotFoundError('Файл для записи не определен')
                                         if fn:
@@ -957,7 +979,7 @@ class MainWindow(QMainWindow):
                                                     encryption=fitz.PDF_ENCRYPT_KEEP,
                                                 )
                                             except Exception as e:
-                                                if self.show_save_error_msg(e) == QMessageBox.StandardButton.Cancel:
+                                                if self._show_save_error_msg(e) == QMessageBox.StandardButton.Cancel:
                                                     newdoc.close()
                                                     raise
 
@@ -966,7 +988,7 @@ class MainWindow(QMainWindow):
                                         opage = pdfout.new_page(width=page.rect.width, height=page.rect.height)
                                         opage.insert_image(opage.rect, stream=temp)
                                 else:
-                                    fn, overwrite_all, abort = self.check_new_file(outfile, ext, ind, overwrite_all)
+                                    fn, overwrite_all, abort = self._check_new_file(outfile, ext, ind, overwrite_all)
                                     if abort:
                                         raise FileNotFoundError('Файл для записи не определен')
                                     if fn:
@@ -976,7 +998,7 @@ class MainWindow(QMainWindow):
                                             else:
                                                 pix.pil_save(fn, format="png")
                                         except Exception as e:
-                                            if self.show_save_error_msg(e) == QMessageBox.StandardButton.Cancel:
+                                            if self._show_save_error_msg(e) == QMessageBox.StandardButton.Cancel:
                                                 raise
                         except Exception:
                             # Вертаем поворот страницы взад
@@ -1004,7 +1026,7 @@ class MainWindow(QMainWindow):
                     return
                 pdfout.close()
 
-        self.progress_bar.setValue(100)
+        self.ui.progress_bar.setValue(100)
         QApplication.processEvents()
 
         self.statusBar().showMessage('Готово!')
@@ -1015,7 +1037,7 @@ class MainWindow(QMainWindow):
                 subprocess.Popen((self._pdfviewer_cmd, outfile))
         QMessageBox.information(self, "Сохранение файла/файлов", "Готово!")
 
-    def tableanalize_process(self, strong):
+    def _tableanalize_process(self, strong):
         self._title = "Экспорт табличных данных в XLSX"
         outfile, _ = QFileDialog.getSaveFileName(
             self, self._title, os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"'
@@ -1027,8 +1049,8 @@ class MainWindow(QMainWindow):
                 outfile += '.xlsx'
 
             self.statusBar().showMessage('Экспорт табличных данных в XLSX...')
-            self.progress_bar.setValue(0)
-            self.progress_bar.setVisible(True)
+            self.ui.progress_bar.setValue(0)
+            self.ui.progress_bar.setVisible(True)
             self.setDisabled(True)
             QApplication.processEvents()
 
@@ -1056,7 +1078,7 @@ class MainWindow(QMainWindow):
                 # for pno in range(len(doc)):
                 for pno in enumerate(doc):
                     start_row += parse_page_tables(doc[pno], worksheet, start_row, cell_format, strong)
-                    self.progress_bar.setValue(pno * 99 // pgcount)
+                    self.ui.progress_bar.setValue(pno * 99 // pgcount)
                     QApplication.processEvents()
 
                 workbook.close()
@@ -1064,7 +1086,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, self._title, f"Ошибка: {e}")
                 return
 
-            self.progress_bar.setValue(100)
+            self.ui.progress_bar.setValue(100)
             QApplication.processEvents()
             if start_row > 0:
                 if self._xlseditor_cmd:
@@ -1073,7 +1095,7 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, self._title, "Табличные данные найти не удалось...")
 
-    def exportpd_process(self, recognize_qr):
+    def _export_pd_process(self, recognize_qr):
         self._title = "Экспорт данных в XLSX"
         outfile, _ = QFileDialog.getSaveFileName(
             self, self._title, os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"'
@@ -1085,8 +1107,8 @@ class MainWindow(QMainWindow):
                 outfile += '.xlsx'
 
             self.statusBar().showMessage('Экспорт данных в XLSX...')
-            self.progress_bar.setValue(0)
-            self.progress_bar.setVisible(True)
+            self.ui.progress_bar.setValue(0)
+            self.ui.progress_bar.setVisible(True)
             self.setDisabled(True)
             QApplication.processEvents()
 
@@ -1188,7 +1210,7 @@ class MainWindow(QMainWindow):
                     old_np = np
                     np_start_pg = current_page + 1
 
-                self.progress_bar.setValue(current_page * 95 // pgcount)
+                self.ui.progress_bar.setValue(current_page * 95 // pgcount)
                 QApplication.processEvents()
                 # self.progressBar.setValue(current_page * 95 / pgcount)
 
@@ -1233,7 +1255,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, self._title, f"Ошибка: {e}")
                 return
 
-            self.progress_bar.setValue(100)
+            self.ui.progress_bar.setValue(100)
             QApplication.processEvents()
             # if platform.system() == 'Windows':
             #     subprocess.Popen(('start', outfile), shell = True)
@@ -1246,9 +1268,9 @@ class MainWindow(QMainWindow):
     def on_actionSaveAs_triggered(self):  # pylint: disable=invalid-name
         dlg = SaveAsDialog(self)
         if dlg.exec_():
-            self.saveas_process(dlg.params(), False)
+            self._saveas_process(dlg.params(), False)
 
-            self.progress_bar.setVisible(False)
+            self.ui.progress_bar.setVisible(False)
             self.setDisabled(False)
             self.statusBar().showMessage('')
             QApplication.processEvents()
@@ -1261,9 +1283,9 @@ class MainWindow(QMainWindow):
             fitz.Tools().set_small_glyph_heights(False)
 
             dlg.params().format = dlg.params().format_censore
-            self.saveas_process(dlg.params(), True)
+            self._saveas_process(dlg.params(), True)
 
-            self.progress_bar.setVisible(False)
+            self.ui.progress_bar.setVisible(False)
             self.setDisabled(False)
             self.statusBar().showMessage('')
             QApplication.processEvents()
@@ -1273,32 +1295,32 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def on_actionTablesAnalizeStrong_triggered(self):  # pylint: disable=invalid-name
-        self.tableanalize_process(True)
-        self.progress_bar.setVisible(False)
+        self._tableanalize_process(True)
+        self.ui.progress_bar.setVisible(False)
         self.setDisabled(False)
         self.statusBar().showMessage('')
         QApplication.processEvents()
 
     @Slot()
     def on_actionTablesAnalizeSimple_triggered(self):  # pylint: disable=invalid-name
-        self.tableanalize_process(False)
-        self.progress_bar.setVisible(False)
+        self._tableanalize_process(False)
+        self.ui.progress_bar.setVisible(False)
         self.setDisabled(False)
         self.statusBar().showMessage('')
         QApplication.processEvents()
 
     @Slot()
     def on_actionPDexport_triggered(self):  # pylint: disable=invalid-name
-        self.exportpd_process(False)
-        self.progress_bar.setVisible(False)
+        self._export_pd_process(False)
+        self.ui.progress_bar.setVisible(False)
         self.setDisabled(False)
         self.statusBar().showMessage('')
         QApplication.processEvents()
 
     @Slot()
     def on_actionPDexportQR_triggered(self):  # pylint: disable=invalid-name
-        self.exportpd_process(True)
-        self.progress_bar.setVisible(False)
+        self._export_pd_process(True)
+        self.ui.progress_bar.setVisible(False)
         self.setDisabled(False)
         self.statusBar().showMessage('')
         QApplication.processEvents()
@@ -1310,16 +1332,16 @@ class MainWindow(QMainWindow):
     @Slot()
     def on_actionHome_triggered(self):  # pylint: disable=invalid-name
         if self.pdf_view.page_count > 0:
-            self.page_select(0)
+            self._change_page_number(0)
 
     @Slot()
     def on_actionEnd_triggered(self):  # pylint: disable=invalid-name
         if self.pdf_view.page_count > 0:
-            self.page_select(self.pdf_view.page_count - 1)
+            self._change_page_number(self.pdf_view.page_count - 1)
 
     @Slot()
     def on_actionAbout_triggered(self):  # pylint: disable=invalid-name
-        QMessageBox.about(self, "О программе Mini PDF Tools", ABOUT_TEXT)
+        QMessageBox.about(self, "О программе " + const.APP_TITLE, ABOUT_TEXT)
 
     @Slot()
     def on_actionZoom_In_triggered(self):  # pylint: disable=invalid-name
