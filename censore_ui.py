@@ -26,36 +26,36 @@ class Ui_CensoreDialog(object):
         self.verticalLayout = QVBoxLayout(CensoreDialog)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.verticalLayout.setSizeConstraint(QLayout.SetFixedSize)
-        self.grpCensore = QGroupBox(CensoreDialog)
-        self.grpCensore.setObjectName(u"grpCensore")
-        self.horizontalLayout = QHBoxLayout(self.grpCensore)
+        self.grpCensoreItems = QGroupBox(CensoreDialog)
+        self.grpCensoreItems.setObjectName(u"grpCensoreItems")
+        self.horizontalLayout = QHBoxLayout(self.grpCensoreItems)
         self.horizontalLayout.setSpacing(25)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.chkFIO = QCheckBox(self.grpCensore)
+        self.chkFIO = QCheckBox(self.grpCensoreItems)
         self.chkFIO.setObjectName(u"chkFIO")
         self.chkFIO.setChecked(True)
 
         self.horizontalLayout.addWidget(self.chkFIO, 0, Qt.AlignHCenter)
 
-        self.chkAddr = QCheckBox(self.grpCensore)
+        self.chkAddr = QCheckBox(self.grpCensoreItems)
         self.chkAddr.setObjectName(u"chkAddr")
         self.chkAddr.setChecked(True)
 
         self.horizontalLayout.addWidget(self.chkAddr, 0, Qt.AlignHCenter)
 
-        self.chkPost = QCheckBox(self.grpCensore)
+        self.chkPost = QCheckBox(self.grpCensoreItems)
         self.chkPost.setObjectName(u"chkPost")
         self.chkPost.setChecked(True)
 
         self.horizontalLayout.addWidget(self.chkPost, 0, Qt.AlignHCenter)
 
-        self.chkIPU = QCheckBox(self.grpCensore)
+        self.chkIPU = QCheckBox(self.grpCensoreItems)
         self.chkIPU.setObjectName(u"chkIPU")
         self.chkIPU.setChecked(True)
 
         self.horizontalLayout.addWidget(self.chkIPU, 0, Qt.AlignHCenter)
 
-        self.chkQR = QCheckBox(self.grpCensore)
+        self.chkQR = QCheckBox(self.grpCensoreItems)
         self.chkQR.setObjectName(u"chkQR")
         self.chkQR.setChecked(True)
 
@@ -67,7 +67,7 @@ class Ui_CensoreDialog(object):
         self.horizontalLayout.setStretch(3, 4)
         self.horizontalLayout.setStretch(4, 3)
 
-        self.verticalLayout.addWidget(self.grpCensore)
+        self.verticalLayout.addWidget(self.grpCensoreItems)
 
         self.grpFormat = QGroupBox(CensoreDialog)
         self.grpFormat.setObjectName(u"grpFormat")
@@ -276,6 +276,21 @@ class Ui_CensoreDialog(object):
 
         self.verticalLayout.addWidget(self.grpJPEG)
 
+        self.grpCensore = QGroupBox(CensoreDialog)
+        self.grpCensore.setObjectName(u"grpCensore")
+        self.verticalLayout_4 = QVBoxLayout(self.grpCensore)
+        self.verticalLayout_4.setObjectName(u"verticalLayout_4")
+        self.cmbCensore = QComboBox(self.grpCensore)
+        self.cmbCensore.addItem("")
+        self.cmbCensore.addItem("")
+        self.cmbCensore.addItem("")
+        self.cmbCensore.setObjectName(u"cmbCensore")
+
+        self.verticalLayout_4.addWidget(self.cmbCensore)
+
+
+        self.verticalLayout.addWidget(self.grpCensore)
+
         self.buttonBox = QDialogButtonBox(CensoreDialog)
         self.buttonBox.setObjectName(u"buttonBox")
         self.buttonBox.setOrientation(Qt.Horizontal)
@@ -295,7 +310,7 @@ class Ui_CensoreDialog(object):
 
     def retranslateUi(self, CensoreDialog):
         CensoreDialog.setWindowTitle(QCoreApplication.translate("CensoreDialog", u"\u0414\u0435\u043f\u0435\u0440\u0441\u043e\u043d\u0438\u0444\u0438\u043a\u0430\u0446\u0438\u044f \u0434\u0430\u043d\u043d\u044b\u0445 \u0432 \u043f\u043b\u0430\u0442\u0435\u0436\u043d\u043e\u043c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0435 \u041a\u0422\u041a", None))
-        self.grpCensore.setTitle(QCoreApplication.translate("CensoreDialog", u"\u0414\u0435\u043f\u0435\u0440\u0441\u043e\u043d\u0438\u0444\u0438\u043a\u0430\u0446\u0438\u044f \u0434\u0430\u043d\u043d\u044b\u0445", None))
+        self.grpCensoreItems.setTitle(QCoreApplication.translate("CensoreDialog", u"\u0414\u0435\u043f\u0435\u0440\u0441\u043e\u043d\u0438\u0444\u0438\u043a\u0430\u0446\u0438\u044f \u0434\u0430\u043d\u043d\u044b\u0445", None))
         self.chkFIO.setText(QCoreApplication.translate("CensoreDialog", u"\u0424\u0418\u041e", None))
         self.chkAddr.setText(QCoreApplication.translate("CensoreDialog", u"\u0410\u0434\u0440\u0435\u0441 \u043f\u043e\u043c\u0435\u0449\u0435\u043d\u0438\u044f", None))
         self.chkPost.setText(QCoreApplication.translate("CensoreDialog", u"\u0410\u0434\u0440\u0435\u0441 \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0438", None))
@@ -326,5 +341,10 @@ class Ui_CensoreDialog(object):
 
         self.lblQualityVal.setText(QCoreApplication.translate("CensoreDialog", u"100", None))
         self.lblQuality.setText(QCoreApplication.translate("CensoreDialog", u"\u041a\u0430\u0447\u0435\u0441\u0442\u0432\u043e:", None))
+        self.grpCensore.setTitle(QCoreApplication.translate("CensoreDialog", u"\u041f\u0435\u0440\u0441\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435 / \u043a\u043e\u043c\u043c\u0435\u0440\u0447\u0435\u0441\u043a\u0430\u044f \u0442\u0430\u0439\u043d\u0430", None))
+        self.cmbCensore.setItemText(0, QCoreApplication.translate("CensoreDialog", u"\u0411\u0435\u0437 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f", None))
+        self.cmbCensore.setItemText(1, QCoreApplication.translate("CensoreDialog", u"\u0420\u0430\u0437\u043c\u044b\u0442\u044c \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044e", None))
+        self.cmbCensore.setItemText(2, QCoreApplication.translate("CensoreDialog", u"\u0417\u0430\u043a\u0440\u0430\u0441\u0438\u0442\u044c \u0431\u0435\u043b\u044b\u043c \u0446\u0432\u0435\u0442\u043e\u043c \u0438\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044e", None))
+
     # retranslateUi
 

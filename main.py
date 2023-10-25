@@ -2,8 +2,6 @@
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 import sys
-
-# import os
 from argparse import ArgumentParser
 from argparse import RawTextHelpFormatter
 
@@ -21,17 +19,16 @@ if __name__ == "__main__":
     argument_parser.add_argument("file", help="The file(s) to open", nargs='*', type=str)
     options = argument_parser.parse_args()
 
-    a = QApplication(sys.argv)
-    # a.setApplicationDisplayName("Mini PDF Tools")
-    w = MainWindow()
-    w.show()
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.show()
     if options.file:
         if len(options.file) == 1:
-            w._open_or_combine_files(QUrl.fromLocalFile(options.file[0]))
+            win.open_or_combine_files(QUrl.fromLocalFile(options.file[0]))
         else:
-            a.processEvents()
-            w._show_combine_files_dialog(options.file)
+            app.processEvents()
+            win.show_combine_files_dialog(options.file)
     # !!! For debugging !!!
-    # w.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\test.pdf'))
-    # w.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\source\Платежные документы КТК.pdf'))
+    # win.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\test.pdf'))
+    # win.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\source\Платежные документы КТК.pdf'))
     sys.exit(QCoreApplication.exec_())

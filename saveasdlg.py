@@ -1,9 +1,14 @@
+"""
+Этот файл содержит класс диалога настройки параметров сохранения файла/файлов
+"""
+
 from PySide2.QtCore import QRegularExpression
 from PySide2.QtCore import Slot
 from PySide2.QtGui import QRegularExpressionValidator
 from PySide2.QtWidgets import QDialog
 from PySide2.QtWidgets import QDialogButtonBox
 
+from params import CensoreMode
 from params import FileFormat
 from params import PageMode
 from params import PageRotation
@@ -12,155 +17,184 @@ from saveas_ui import Ui_SaveAsDialog
 
 
 class SaveAsDialog(QDialog):
+    """Диалог настройки параметров сохранения файла/файлов"""
+
     def __init__(self, parent=None):
+        # Инициализируем интерфейс на основе автокода QT
         super().__init__(parent)
         self.ui = Ui_SaveAsDialog()
         self.ui.setupUi(self)
 
-        self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Save).clicked.connect(self.save)
-
-        self.m_current_params = SaveParams()
-        # self.m_currentParams.load_params()
-
+        # Меняем надписи кнопок
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Save).setText('Сохранить')
         self.ui.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText('Отмена')
 
-        if self.m_current_params.format == FileFormat.FMT_PDF:
+        # Загружаем параметры сохранения файла/файлов
+        self._current_params = SaveParams()
+
+        # Настраиваем элементы интерфейса на основе загруженных параметров
+        # -- формат выходного файла/файлов
+        if self._current_params.format == FileFormat.FMT_PDF:
             self.ui.rbtPDF.setChecked(True)
-        elif self.m_current_params.format == FileFormat.FMT_PDF_JPEG:
+        elif self._current_params.format == FileFormat.FMT_PDF_JPEG:
             self.ui.rbtPDFjpeg.setChecked(True)
-        elif self.m_current_params.format == FileFormat.FMT_JPEG:
+        elif self._current_params.format == FileFormat.FMT_JPEG:
             self.ui.rbtJPEG.setChecked(True)
         else:
             self.ui.rbtPNG.setChecked(True)
-        self.format_checked(self.m_current_params.format)
+        self._format_checked(self._current_params.format)
 
-        if self.m_current_params.pgmode == PageMode.PG_ALL:
+        # -- выбор страниц для сохранения
+        if self._current_params.pgmode == PageMode.PG_ALL:
             self.ui.rbtPgAll.setChecked(True)
-        elif self.m_current_params.pgmode == PageMode.PG_CURRENT:
+        elif self._current_params.pgmode == PageMode.PG_CURRENT:
             self.ui.rbtPgCurr.setChecked(True)
         else:
             self.ui.rbtPgRange.setChecked(True)
-        self.pagemode_checked(self.m_current_params.pgmode)
+        self._pagemode_checked(self._current_params.pgmode)
 
-        self.ui.edtPages.setText(self.m_current_params.pgrange)
+        # -- диапазон страниц для сохранения
+        self.ui.edtPages.setText(self._current_params.pgrange)
         self.ui.edtPages.setValidator(QRegularExpressionValidator(QRegularExpression('[0-9,-]*')))
-        self.ui.chkSingles.setChecked(self.m_current_params.singles)
+        # -- чекбокс "сохранять страницы в отдельные файлы"
+        self.ui.chkSingles.setChecked(self._current_params.singles)
 
-        self.rotation_checked(self.m_current_params.rotation)
+        # -- вращение страниц
+        self._rotation_checked(self._current_params.rotation)
 
-        self.ui.cmbDPI.setCurrentText(str(self.m_current_params.dpi))
-        self.ui.SliderQuality.setValue(self.m_current_params.quality)
+        # -- DPI и качество создаваемых файлов в графических форматах
+        self.ui.cmbDPI.setCurrentText(str(self._current_params.dpi))
+        self.ui.SliderQuality.setValue(self._current_params.quality)
 
-        # self.ui.chkCensore.setChecked(self.m_currentParams.censore)
-        self.ui.cmbCensore.setCurrentIndex(self.m_current_params.censore)
+        # -- порядок деперсонификации данных в выделенных областях
+        self.ui.cmbCensore.setCurrentIndex(self._current_params.censore.value)
 
+        # Уменьшаем размер диалогового окна до минимально необходимого
         self.resize(self.minimumSizeHint())
 
-    ############################################
-    # Свойство класса с выбранными параметрами
+    @property
     def params(self):
-        return self.m_current_params
+        """Параметры сохранения файла/файлов, указанные пользователем"""
+        return self._current_params
 
-    def update_params(self):
-        self.m_current_params.pgrange = self.ui.edtPages.text()
-        self.m_current_params.singles = self.ui.chkSingles.isChecked()
-        self.m_current_params.dpi = int(self.ui.cmbDPI.currentText())
-        self.m_current_params.quality = self.ui.SliderQuality.value()
-        # self.m_currentParams.censore = self.ui.chkCensore.isChecked()
-        self.m_current_params.censore = self.ui.cmbCensore.currentIndex()
+    def _update_other_params(self):
+        """Обновить прочие параметры на основании значений элементов интерфейса
+        (для элементов, не имеющих своего обработчика)
+        """
+        self._current_params.pgrange = self.ui.edtPages.text()
+        self._current_params.singles = self.ui.chkSingles.isChecked()
+        self._current_params.dpi = int(self.ui.cmbDPI.currentText())
+        self._current_params.quality = self.ui.SliderQuality.value()
+        self._current_params.censore = CensoreMode(self.ui.cmbCensore.currentIndex())
 
-    @Slot()
-    def save(self):
-        '''Обработка нажатия кнопки "Сохранить"'''
-        self.update_params()
-        self.m_current_params.save_params()
-        # print(self.m_currentParams)
-        self.hide()
+    def _format_checked(self, m_format: FileFormat):
+        """Обработка выбора формата файла/файлов"""
 
-    def format_checked(self, m_format):
-        '''Обработка выбора формата файла/файлов'''
-        self.m_current_params.format = m_format
+        # Синхронизируем соответствующий параметр
+        self._current_params.format = m_format
 
-        fl_pdf = m_format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG)
-        self.ui.chkSingles.setEnabled(fl_pdf and self.m_current_params.pgmode != PageMode.PG_CURRENT)
-        # self.ui.btnOriginal.setEnabled(fl_pdf)
-        # self.ui.btnLeft.setEnabled(fl_pdf)
-        # self.ui.btnRight.setEnabled(fl_pdf)
-        # self.ui.btn180dg.setEnabled(fl_pdf)
-
-        fl_dpi = m_format in (FileFormat.FMT_PDF_JPEG, FileFormat.FMT_JPEG, FileFormat.FMT_PNG)
-        self.ui.lblDPI.setEnabled(fl_dpi)
-        self.ui.cmbDPI.setEnabled(fl_dpi)
-        self.ui.cmbCensore.setEnabled(fl_dpi)
-
-        fl_qual = m_format in (FileFormat.FMT_PDF_JPEG, FileFormat.FMT_JPEG)
-        self.ui.lblQuality.setEnabled(fl_qual)
-        self.ui.SliderQuality.setEnabled(fl_qual)
-        self.ui.lblQualityVal.setEnabled(fl_qual)
-
-    @Slot()
-    def on_rbtPDF_clicked(self):  # pylint: disable=invalid-name
-        self.format_checked(FileFormat.FMT_PDF)
-
-    @Slot()
-    def on_rbtPDFjpeg_clicked(self):  # pylint: disable=invalid-name
-        self.format_checked(FileFormat.FMT_PDF_JPEG)
-
-    @Slot()
-    def on_rbtJPEG_clicked(self):  # pylint: disable=invalid-name
-        self.format_checked(FileFormat.FMT_JPEG)
-
-    @Slot()
-    def on_rbtPNG_clicked(self):  # pylint: disable=invalid-name
-        self.format_checked(FileFormat.FMT_PNG)
-
-    ############################################
-    # Обработка выбора формата файла/файлов
-    def pagemode_checked(self, m_pgmode):
-        self.m_current_params.pgmode = m_pgmode
-
-        fl_rng = m_pgmode == PageMode.PG_RANGE
-        self.ui.lblPg.setEnabled(fl_rng)
-        self.ui.edtPages.setEnabled(fl_rng)
+        # Переключаем доступность чекбокса "сохранять страницы в отдельные файлы"
         self.ui.chkSingles.setEnabled(
-            self.m_current_params.format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG)
+            m_format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG)
+            and self._current_params.pgmode != PageMode.PG_CURRENT
+        )
+
+        # Переключаем доступность поля ввода DPI и "цензуры"
+        is_dpi = m_format in (FileFormat.FMT_PDF_JPEG, FileFormat.FMT_JPEG, FileFormat.FMT_PNG)
+        self.ui.lblDPI.setEnabled(is_dpi)
+        self.ui.cmbDPI.setEnabled(is_dpi)
+        self.ui.cmbCensore.setEnabled(is_dpi)
+
+        # Переключаем доступность поля ввода качества изображения
+        is_quality = m_format in (FileFormat.FMT_PDF_JPEG, FileFormat.FMT_JPEG)
+        self.ui.lblQuality.setEnabled(is_quality)
+        self.ui.SliderQuality.setEnabled(is_quality)
+        self.ui.lblQualityVal.setEnabled(is_quality)
+
+    def _pagemode_checked(self, m_pgmode: PageMode):
+        """Обработка выбора формата файла/файлов"""
+
+        # Синхронизируем соответствующий параметр
+        self._current_params.pgmode = m_pgmode
+
+        # Переключаем доступность поля ввода диапазона страниц
+        is_range = m_pgmode == PageMode.PG_RANGE
+        self.ui.lblPg.setEnabled(is_range)
+        self.ui.edtPages.setEnabled(is_range)
+
+        # Переключаем доступность чекбокса "сохранять страницы в отдельные файлы"
+        self.ui.chkSingles.setEnabled(
+            self._current_params.format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG)
             and m_pgmode != PageMode.PG_CURRENT
         )
 
-    @Slot()
-    def on_rbtPgAll_clicked(self):  # pylint: disable=invalid-name
-        self.pagemode_checked(PageMode.PG_ALL)
+    def _rotation_checked(self, m_rotation: PageRotation):
+        """Обработка выбора вращения страниц"""
 
-    @Slot()
-    def on_rbtPgCurr_clicked(self):  # pylint: disable=invalid-name
-        self.pagemode_checked(PageMode.PG_CURRENT)
+        # Синхронизируем соответствующий параметр
+        self._current_params.rotation = m_rotation
 
-    @Slot()
-    def on_rbtPgRange_clicked(self):  # pylint: disable=invalid-name
-        self.pagemode_checked(PageMode.PG_RANGE)
-
-    ############################################
-    # Обработка выбора вращения страниц
-    def rotation_checked(self, m_rotation):
-        self.m_current_params.rotation = m_rotation
+        # Переключаем состояние Checked кнопок с иконками вращения
         self.ui.btnOriginal.setChecked(m_rotation == PageRotation.RT_NONE)
         self.ui.btnLeft.setChecked(m_rotation == PageRotation.RT_LEFT)
         self.ui.btnRight.setChecked(m_rotation == PageRotation.RT_RIGHT)
         self.ui.btn180dg.setChecked(m_rotation == PageRotation.RT_180)
 
+    ###########################################################################
+    # Обработчики событий QT
+    ###########################################################################
+
+    @Slot()
+    def on_SaveAsDialog_accepted(self):  # pylint: disable=invalid-name
+        """Обработка нажатия кнопки <Сохранить>"""
+
+        # Обновляем прочие параметры на основании значений элементов интерфейса
+        self._update_other_params()
+        # Сохраняем параметры в реестре
+        self._current_params.save_params()
+        # Закрываем окно диалога
+        self.hide()
+
+    @Slot()
+    def on_rbtPDF_clicked(self):  # pylint: disable=invalid-name
+        self._format_checked(FileFormat.FMT_PDF)
+
+    @Slot()
+    def on_rbtPDFjpeg_clicked(self):  # pylint: disable=invalid-name
+        self._format_checked(FileFormat.FMT_PDF_JPEG)
+
+    @Slot()
+    def on_rbtJPEG_clicked(self):  # pylint: disable=invalid-name
+        self._format_checked(FileFormat.FMT_JPEG)
+
+    @Slot()
+    def on_rbtPNG_clicked(self):  # pylint: disable=invalid-name
+        self._format_checked(FileFormat.FMT_PNG)
+
+    @Slot()
+    def on_rbtPgAll_clicked(self):  # pylint: disable=invalid-name
+        self._pagemode_checked(PageMode.PG_ALL)
+
+    @Slot()
+    def on_rbtPgCurr_clicked(self):  # pylint: disable=invalid-name
+        self._pagemode_checked(PageMode.PG_CURRENT)
+
+    @Slot()
+    def on_rbtPgRange_clicked(self):  # pylint: disable=invalid-name
+        self._pagemode_checked(PageMode.PG_RANGE)
+
     @Slot()
     def on_btnOriginal_clicked(self):  # pylint: disable=invalid-name
-        self.rotation_checked(PageRotation.RT_NONE)
+        self._rotation_checked(PageRotation.RT_NONE)
 
     @Slot()
     def on_btnLeft_clicked(self):  # pylint: disable=invalid-name
-        self.rotation_checked(PageRotation.RT_LEFT)
+        self._rotation_checked(PageRotation.RT_LEFT)
 
     @Slot()
     def on_btnRight_clicked(self):  # pylint: disable=invalid-name
-        self.rotation_checked(PageRotation.RT_RIGHT)
+        self._rotation_checked(PageRotation.RT_RIGHT)
 
     @Slot()
     def on_btn180dg_clicked(self):  # pylint: disable=invalid-name
-        self.rotation_checked(PageRotation.RT_180)
+        self._rotation_checked(PageRotation.RT_180)

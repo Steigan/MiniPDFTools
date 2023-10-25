@@ -25,7 +25,7 @@
     <enum>QLayout::SetFixedSize</enum>
    </property>
    <item>
-    <widget class="QGroupBox" name="grpCensore">
+    <widget class="QGroupBox" name="grpCensoreItems">
      <property name="title">
       <string>Деперсонификация данных</string>
      </property>
@@ -416,6 +416,34 @@
          </widget>
         </item>
        </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grpCensore">
+     <property name="title">
+      <string>Персональные данные / коммерческая тайна</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_4">
+      <item>
+       <widget class="QComboBox" name="cmbCensore">
+        <item>
+         <property name="text">
+          <string>Без обработки изображения</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Размыть информацию</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Закрасить белым цветом информацию</string>
+         </property>
+        </item>
+       </widget>
       </item>
      </layout>
     </widget>

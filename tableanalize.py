@@ -14,7 +14,7 @@ NODE_DIR_LEFT = 4
 NODE_DIR_RIGHT = 8
 
 
-class tableBorder:
+class TableBorder:
     """Класс для хранения данных о найденных границах/рамках между ячейками таблицы"""
 
     def __init__(self, original_coord, start_coord, end_coord):
@@ -122,7 +122,7 @@ def parse_page_tables(page, worksheet, start_row, cell_format, strong: bool = Tr
                         m_start, m_end = p2.y, p1.y
 
                     vert.add(p1.x)
-                    vert_borders.append(tableBorder(p1.x, m_start, m_end))
+                    vert_borders.append(TableBorder(p1.x, m_start, m_end))
 
                 elif p1.y == p2.y:  # это горизонтальная линия
                     if p1.x <= p2.x:
@@ -131,7 +131,7 @@ def parse_page_tables(page, worksheet, start_row, cell_format, strong: bool = Tr
                         m_start, m_end = p2.x, p1.x
 
                     hori.add(p1.y)
-                    hori_borders.append(tableBorder(p1.y, m_start, m_end))
+                    hori_borders.append(TableBorder(p1.y, m_start, m_end))
 
             elif item[0] == "re":  # это прямоугольник
                 rect = item[1] * rm  # приводим к "экранной" системе координат
@@ -140,10 +140,10 @@ def parse_page_tables(page, worksheet, start_row, cell_format, strong: bool = Tr
                 vert.add(rect.x1)
                 hori.add(rect.y0)
                 hori.add(rect.y1)
-                vert_borders.append(tableBorder(rect.x0, rect.y0, rect.y1))
-                vert_borders.append(tableBorder(rect.x1, rect.y0, rect.y1))
-                hori_borders.append(tableBorder(rect.y0, rect.x0, rect.x1))
-                hori_borders.append(tableBorder(rect.y1, rect.x0, rect.x1))
+                vert_borders.append(TableBorder(rect.x0, rect.y0, rect.y1))
+                vert_borders.append(TableBorder(rect.x1, rect.y0, rect.y1))
+                hori_borders.append(TableBorder(rect.y0, rect.x0, rect.x1))
+                hori_borders.append(TableBorder(rect.y1, rect.x0, rect.x1))
 
     # Второй этап: определяем "округленные" вертикальные и горизонтальные направляющие
     s_vert = sorted(list(vert))
@@ -213,8 +213,8 @@ def parse_page_tables(page, worksheet, start_row, cell_format, strong: bool = Tr
                     m_idx += 1
 
         # Пятый этап: распознание текста в найденных прямоугольных областях и заполнение таблицы
-        for rdx in range(len(hori)):
-            for cdx in range(len(vert)):
+        for rdx, _ in enumerate(hori):
+            for cdx, _ in enumerate(vert):
                 node = nodes[rdx][cdx]
                 if (node & NODE_DIR_RIGHT) and (node & NODE_DIR_DOWN):  # найден стартовый узел
                     for cdx2 in range(cdx + 1, len(vert)):  # обходим следующие узлы по горизонтали
@@ -264,7 +264,7 @@ def parse_page_tables(page, worksheet, start_row, cell_format, strong: bool = Tr
     return len(hori) - 1
 
 
-def parse_tables(doc, xlsfile: str, strong: bool = True):
+def parse_tables(doc, xlsfile: str, strong: bool = True, progress_callback=None):
     """Анализ и разбор табличных данных на всех страницах файла PDF и сохранение их в файл XLSX
 
     Args:
@@ -272,6 +272,7 @@ def parse_tables(doc, xlsfile: str, strong: bool = True):
         xlsfile (str): имя сохраняемого файла XLSX
         strong (bool): True - режим строгого поиска разметки таблицы,
                        False - упрощенное дробление таблицы на сетку по найденным направляющим
+        process_callback: callback-функция, которой необходимо передать процент проделанной работы
 
     Returns:
         int: количество добавленных в файл XLSX строк
@@ -284,17 +285,20 @@ def parse_tables(doc, xlsfile: str, strong: bool = True):
     cell_format.set_align('vcenter')
     cell_format.set_text_wrap()
     cell_format.set_border(1)
-    # worksheet.set_column(0, 0, 7)
-    # worksheet.write_row(0, 0, ("Код","Объем"))
 
+    pgcount = len(doc)
     start_row = 0
-    # noinspection PyTypeChecker
-    for pno in range(len(doc)):
-        start_row += parse_page_tables(doc[pno], worksheet, start_row, cell_format, strong)
+
+    for pno, page in enumerate(doc):
+        start_row += parse_page_tables(page, worksheet, start_row, cell_format, strong)
+        if progress_callback is not None:
+            progress_callback((pno + 1) * 100 // pgcount)
 
     # worksheet.freeze_panes(1, 0)
     # worksheet.autofilter(0, 0, row_num, 3)
     workbook.close()
+    if progress_callback is not None:
+        progress_callback(100)
     return start_row
 
 

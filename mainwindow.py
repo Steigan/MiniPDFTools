@@ -1,13 +1,14 @@
-# Copyright (C) 2022 The Qt Company Ltd.
-# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+"""
+Этот файл содержит класс основного окна приложения
+"""
 
-import configparser
 import io
 import os
 import re
 import shutil
 import subprocess
 import sys
+import traceback
 from itertools import groupby
 
 import fitz
@@ -15,7 +16,6 @@ import xlsxwriter
 from PIL import Image as PILImage
 from PIL import ImageDraw
 from PIL import ImageOps
-from PySide2.QtCore import QSettings
 from PySide2.QtCore import Qt
 from PySide2.QtCore import QUrl
 from PySide2.QtCore import Slot
@@ -26,11 +26,11 @@ from PySide2.QtWidgets import QMainWindow
 from PySide2.QtWidgets import QMenu
 from PySide2.QtWidgets import QMessageBox
 from PySide2.QtWidgets import QProgressBar
-from PySide2.QtWidgets import QSpinBox
 from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
 import const
+import params
 from censoredlg import CensoreDialog
 from combinedlg import CombineDialog
 from mainwindow_ui import Ui_MainWindow
@@ -39,12 +39,13 @@ from params import PageMode
 from params import PageRotation
 from params import SaveParams
 from saveasdlg import SaveAsDialog
+from siapdfview import PageNumberSpinBox
 from siapdfview import SiaPdfView
 from siapdfview import ZoomSelector
-from tableanalize import parse_page_tables
+from tableanalize import parse_tables
 
 
-ABOUT_TEXT = '''
+ABOUT_TEXT = """
 Mini PDF Tools - мини набор инструментов для просмотра и обработки файлов PDF.
 Версия от 23.10.2023 (c) 2023 Игорь Степаненков
 
@@ -56,53 +57,27 @@ XlsxWriter (c) 2013-2023 John McNamara
 PyZBar (c) 2022 Lawrence Hudson
 PyTesseract for Google's Tesseract-OCR Engine (c) 2022 Samuel Hoffstaetter
 Paomedia Small & Flat Icons
-'''
-
-
-class MyQSpinBox(QSpinBox):
-    '''Виджет для поля выбора номера страницы'''
-
-    def __init__(self, wg):
-        super().__init__(wg)
-
-    def keyPressEvent(self, e):
-        # Отфильтровываем PgUp и PgDn
-        if not e.key() in [16777238, 16777239]:
-            super().keyPressEvent(e)
+"""
 
 
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
-    '''Главное окно программы'''
+    """Главное окно программы"""
 
-    def __init__(self, parent=None):  # pylint: disable=too-many-statements
+    def __init__(self, parent=None):
+        # Инициализируем интерфейс на основе автокода QT
         super().__init__(parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.ui.zoom_selector = ZoomSelector(self)
-        self.ui.zoom_selector.setMaximumWidth(150)
-        self.ui.page_selector = MyQSpinBox(self)
-        self.ui.msg_box = QMessageBox(self)
-
-        self._current_filename = ''
-        self._real_file = False
-        self._title = ''
 
         # Загружаем настройки для запуска внешних приложений
-        config = configparser.ConfigParser()
-        try:
-            config.read(os.path.join(os.path.dirname(__file__), const.SETTINGS_FILENAME))
-            self._tesseract_cmd = config.get(const.SETTINGS_SECTION, 'tesseract_cmd', fallback='')
-            self._pdfviewer_cmd = config.get(const.SETTINGS_SECTION, 'pdfviewer_cmd', fallback='')
-            self._xlseditor_cmd = config.get(const.SETTINGS_SECTION, 'xlseditor_cmd', fallback='')
-        except configparser.Error:
-            self._tesseract_cmd = ''
-            self._pdfviewer_cmd = ''
-            self._xlseditor_cmd = ''
+        self._tesseract_cmd, self._pdfviewer_cmd, self._xlseditor_cmd = params.get_apps_paths()
 
-        # Задаем минимальный размер окна
-        self.setMinimumSize(500, 400)
+        # Добавляем элементы интерфейса для изменения масштаба и выбора номера страницы
+        self.ui.zoom_selector = ZoomSelector(self)
+        self.ui.zoom_selector.setMaximumWidth(150)
+        self.ui.page_selector = PageNumberSpinBox(self)
 
-        # Настраиваем панель состояния
+        # Настраиваем панель состояния, выключаем ее видимость
         self.statusBar().showMessage('')
         self.ui.progress_bar = QProgressBar()
         self.statusBar().addPermanentWidget(self.ui.progress_bar)
@@ -115,7 +90,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         # Вставляем pageSelector перед actionForward
         self.ui.mainToolBar.insertWidget(self.ui.actionNext_Page, self.ui.page_selector)
         self.ui.page_selector.setEnabled(False)
-        self.ui.page_selector.valueChanged.connect(self._change_page)
         self.ui.page_selector.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.ui.page_selector.setSuffix(' из 0')
         self.ui.page_selector.setMinimumWidth(70)
@@ -125,18 +99,43 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         self.pdf_view = SiaPdfView(self)
         self.setCentralWidget(self.pdf_view)
 
-        # Привязываем обработчики событий, поступивших от области просмотра документа
-        self.pdf_view.current_page_changed.connect(self._change_page_number)
-        self.pdf_view.rect_selected.connect(self._process_rect_selection)
-        self.pdf_view.zoom_factor_changed.connect(self.ui.zoom_selector.set_zoom_factor)
+        # Создаем контекстное меню
+        self.ui.pop_menu = self._setup_popup_menu()
 
-        # Привязываем обработчик изменения значения зум-фактора в панели инструментов
-        self.ui.zoom_selector.zoom_factor_changed.connect(self.pdf_view.set_zoom_factor)
+        # Подключаем соединения между элементами интерфейса (привязываем обработчики событий)
+        self._setup_qt_connections()
+
+        # Сбрасываем значения в виджетах масштабирования на 100%
         self.ui.zoom_selector.reset()
 
-        # Привязываем обработчик вывода контекстного меню для области просмотра документа
+        # Настраиваем политику контекстного меню для области просмотра документа
         self.pdf_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.pdf_view.customContextMenuRequested.connect(self._show_context_menu)
+
+        # Включаем прием файлов с применением DragAndDrop
+        self.setAcceptDrops(True)
+
+        # Задаем минимальный размер окна
+        self.setMinimumSize(500, 400)
+        # Максимизируем окно
+        self.showMaximized()
+        # Устанавливаем фокус на область просмотра документа
+        self.pdf_view.setFocus()
+
+        # Для наилучшего распознания текстового слоя...
+        fitz.Tools().set_small_glyph_heights(True)
+
+        # Дежурный объект для вывода сообщений
+        self.ui.msg_box = QMessageBox(self)
+
+        # Имя текущего файла
+        self._current_filename = ''
+        # Это настоящий файл (иначе - виртуальный, новый)
+        self._is_real_file = False
+        # Заголовок для дежурного объекта для вывода сообщений
+        self._title = ''
+
+    def _setup_popup_menu(self) -> QMenu:
+        """Создание контекстного меню"""
 
         # Создаем контекстное меню
         pop_menu = QMenu(self)
@@ -146,6 +145,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         pop_menu.addAction(self.ui.actionCbdRectImageCopy)
         pop_menu.addAction(self.ui.actionCbdPageImageCopy)
         pop_menu.addSeparator()
+
         # Если указан путь к Tesseract OCR
         if self._tesseract_cmd:
             pop_menu.addAction(self.ui.actionRectRecognizeText)
@@ -155,6 +155,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             self.ui.actionRectRecognizeText.setVisible(False)
             self.ui.actionRectRecognizeTextTrim.setVisible(False)
             self.ui.menuView.setSeparatorsCollapsible(True)
+
         pop_menu.addAction(self.ui.actionRectRecognizeQR)
         pop_menu.addSeparator()
         pop_menu.addAction(self.ui.actionCbdRectsInfoCopy)
@@ -165,33 +166,82 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         pop_menu.addAction(self.ui.actionSelectAll)
         pop_menu.addAction(self.ui.actionRemoveSelection)
         pop_menu.addAction(self.ui.actionRemoveAllSelections)
-        self.ui.pop_menu = pop_menu
+        return pop_menu
 
-        # Включаем прием файлов с применением DragAndDrop
-        self.setAcceptDrops(True)
-        # Максимизируем окно
-        self.showMaximized()
-        # Устанавливаем фокус на область просмотра документа
-        self.pdf_view.setFocus()
-        # Для наилучшего распознания текстового слоя...
-        fitz.Tools().set_small_glyph_heights(True)
+    def _setup_qt_connections(self):
+        """Подключение соединений между элементами интерфейса"""
+        # Привязываем обработчики событий, поступивших от области просмотра документа
+        self.pdf_view.current_page_changed.connect(self.ui.page_selector.change_page_number)
+        self.pdf_view.zoom_factor_changed.connect(self.ui.zoom_selector.set_zoom_factor)
+        self.pdf_view.rect_selected.connect(self._process_rect_selection)
+
+        # Привязываем обработчик изменения значения зум-фактора и номера страницы в панели инструментов
+        self.ui.zoom_selector.zoom_factor_changed.connect(self.pdf_view.set_zoom_factor)
+        self.ui.page_selector.valueChanged.connect(self._change_page)
+
+        self.ui.actionQuit.triggered.connect(self.close)
+
+        self.ui.actionHome.triggered.connect(self.pdf_view.goto_home)
+        self.ui.actionPrevious_Page.triggered.connect(self.pdf_view.goto_prev_page)
+        self.ui.actionNext_Page.triggered.connect(self.pdf_view.goto_next_page)
+        self.ui.actionEnd.triggered.connect(self.pdf_view.goto_end)
+
+        self.ui.actionZoom_In.triggered.connect(self.pdf_view.zoom_in)
+        self.ui.actionZoom_Out.triggered.connect(self.pdf_view.zoom_out)
+        self.ui.actionZoom_Normal.triggered.connect(lambda: self.pdf_view.set_zoom_factor(1.0))
+
+        self.ui.actionCbdPageImageCopy.triggered.connect(self.pdf_view.copy_page_image_to_clipboard)
+        self.ui.actionCbdRectImageCopy.triggered.connect(self.pdf_view.copy_rect_image_to_clipboard)
+        self.ui.actionCbdRectTextCopy.triggered.connect(self.pdf_view.copy_rect_text_to_clipboard)
+        self.ui.actionCbdRectTextTrimCopy.triggered.connect(lambda: self.pdf_view.copy_rect_text_to_clipboard(True))
+        self.ui.actionRectRecognizeText.triggered.connect(
+            lambda: self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, trim=False)
+        )
+        self.ui.actionRectRecognizeTextTrim.triggered.connect(
+            lambda: self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, trim=True)
+        )
+        self.ui.actionRectRecognizeQR.triggered.connect(self.pdf_view.recognize_qr_and_copy_to_clipboard)
+
+        self.ui.actionCbdRectsInfoCopy.triggered.connect(lambda: self.pdf_view.copy_rects_info_to_clipboard(False))
+        self.ui.actionCbdRectsAllInfoCopy.triggered.connect(lambda: self.pdf_view.copy_rects_info_to_clipboard(True))
+
+        self.ui.actionSelectAll.triggered.connect(self.pdf_view.select_all)
+        self.ui.actionRemoveSelection.triggered.connect(self.pdf_view.remove_selection)
+        self.ui.actionRemoveAllSelections.triggered.connect(lambda: self.pdf_view.remove_selection(True))
+
+        self.ui.actionRectMode.triggered.connect(self.pdf_view.switch_rect_mode)
+
+        self.ui.actionPageRotateLeft.triggered.connect(lambda: self.pdf_view.rotate_pages(1, False))
+        self.ui.actionPageRotateRight.triggered.connect(lambda: self.pdf_view.rotate_pages(2, False))
+        self.ui.actionPageRotate180.triggered.connect(lambda: self.pdf_view.rotate_pages(3, False))
+
+        self.ui.actionPagesRotateLeft.triggered.connect(lambda: self.pdf_view.rotate_pages(1, True))
+        self.ui.actionPagesRotateRight.triggered.connect(lambda: self.pdf_view.rotate_pages(2, True))
+        self.ui.actionPagesRotate180.triggered.connect(lambda: self.pdf_view.rotate_pages(3, True))
+
+        # Привязываем обработчик вывода контекстного меню для области просмотра документа
+        self.pdf_view.customContextMenuRequested.connect(self._show_context_menu)
+
+        self.ui.actionAbout.triggered.connect(
+            lambda: QMessageBox.about(self, "О программе " + const.APP_TITLE, ABOUT_TEXT)
+        )
 
     def _process_rect_selection(self, selected: bool):
-        '''Обработчик изменения количества выделенных областей и наличия активного выделения'''
+        """Обработчик изменения количества выделенных областей и наличия активного выделения"""
 
         # Переключаем доступность элементов интерфейса в зависимости от наличия активного выделения
         for widget in (
-            [
+            (
                 self.ui.actionCbdRectTextCopy,
                 self.ui.actionCbdRectTextTrimCopy,
                 self.ui.actionCbdRectImageCopy,
                 self.ui.actionRemoveSelection,
                 self.ui.actionRectMode,
                 self.ui.actionRectRecognizeQR,
-            ]
-            + [self.ui.actionRectRecognizeText, self.ui.actionRectRecognizeTextTrim]
+            )
+            + (self.ui.actionRectRecognizeText, self.ui.actionRectRecognizeTextTrim)
             if self.ui.actionRectRecognizeText.isVisible()
-            else []
+            else ()
         ):
             widget.setEnabled(selected)
 
@@ -200,17 +250,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Переключаем доступность элементов интерфейса в зависимости от наличия выделений во всем документе
         is_selections_exists = self.pdf_view.selections_all_count > 0
-        for widget in [self.ui.actionCbdRectsAllInfoCopy, self.ui.actionRemoveAllSelections]:
+        for widget in (self.ui.actionCbdRectsAllInfoCopy, self.ui.actionRemoveAllSelections):
             widget.setEnabled(is_selections_exists)
 
     def _show_context_menu(self, position):
-        '''Вывод контекстного меню (если файл открыт)'''
+        """Вывод контекстного меню (если файл открыт)"""
 
         if self.pdf_view.current_page > -1:
             self.ui.pop_menu.exec_(self.pdf_view.mapToGlobal(position))
 
     def dragEnterEvent(self, event):
-        '''Обработчик события DragEnter'''
+        """Обработчик события DragEnter"""
 
         # Проверяем формат перетаскиваемого объекта
         if event.mimeData().hasFormat('text/uri-list'):
@@ -218,7 +268,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             event.acceptProposedAction()
 
     def dropEvent(self, event):
-        '''Обработчик события Drop'''
+        """Обработчик события Drop"""
 
         # Получаем список ссылок
         url_list = event.mimeData().urls()
@@ -232,29 +282,27 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             ]
             # Если список файлов непустой, запускаем интерфейс объединения файлов
             if filelist:
-                self._show_combine_files_dialog(filelist)
+                self.show_combine_files_dialog(filelist)
         else:
             # Если это правильная ссылка, запускаем открытие файла
             to_open = url_list[0]
             if to_open.isValid():
-                self._open_or_combine_files(to_open)
+                self.open_or_combine_files(to_open)
 
         # Подтверждаем принятие объекта
         event.acceptProposedAction()
 
-    def _open_or_combine_files(self, doc_location, files_list=None):
-        '''Открыть файл или объединить несколько файлов в один и открыть его'''
+    def open_or_combine_files(self, doc_location, files_list=None):
+        """Открыть файл или объединить несколько файлов в один и открыть его"""
 
-        if files_list is None:
-            files_list = []
         if doc_location == '' or doc_location.isLocalFile():
             if doc_location:
-                self._real_file = True
+                self._is_real_file = True
                 self._current_filename = doc_location.toLocalFile()
                 self.pdf_view.open(self._current_filename)
                 is_file_opened = self.pdf_view.page_count > 0
-            elif files_list:
-                self._real_file = False
+            elif files_list is not None:
+                self._is_real_file = False
                 self._current_filename = '*** Результат объединения файлов ***'
                 self.pdf_view.combine(files_list)
                 is_file_opened = self.pdf_view.page_count > 0
@@ -266,9 +314,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
                 self.ui.page_selector.setRange(1, self.pdf_view.page_count)
                 self.ui.page_selector.setSuffix(f' из {self.pdf_view.page_count}')
                 self._change_page(1)
-                if self._real_file:
-                    settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
-                    settings.setValue('lastfilename', self._current_filename)
+                if self._is_real_file:
+                    params.set_lastfilename(self._current_filename)
             else:
                 self.setWindowTitle(const.APP_TITLE)
                 self.ui.page_selector.setRange(0, 1)
@@ -277,7 +324,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
             # Переключаем доступность элементов интерфейса в зависимости от
             # наличия открытого файла
-            for widget in [
+            for widget in (
                 self.ui.page_selector,
                 self.ui.zoom_selector,
                 self.ui.actionZoom_In,
@@ -298,7 +345,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
                 self.ui.actionPagesRotateLeft,
                 self.ui.actionPagesRotateRight,
                 self.ui.actionPagesRotate180,
-            ]:
+            ):
                 widget.setEnabled(is_file_opened)
             self.ui.actionRemoveAllSelections.setEnabled(False)
         else:
@@ -307,7 +354,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             QMessageBox.critical(self, "Открыть не удалось", message)
 
     def _change_page(self, page):
-        '''Обработчик события смены номера страницы, полученного от панели инструментов'''
+        """Обработчик события смены номера страницы, полученного от панели инструментов"""
 
         # Переключаем доступность элементов интерфейса в зависимости от номера страницы
         self.ui.actionPrevious_Page.setEnabled(page > 1)
@@ -320,33 +367,25 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             self.pdf_view.goto_page(page - 1)
 
     def _change_page_number(self, val):
-        '''Обработчик события смены номера страницы, полученного от области просмотра документа'''
+        """Обработчик события смены номера страницы, полученного от области просмотра документа"""
         self.ui.page_selector.setValue(val + 1)
 
-    def _show_combine_files_dialog(self, filelist: list):
-        '''Вывод диалога объединения файлов и запуск обработки результата'''
-        dlg = CombineDialog(self, filelist, const.VALID_EXTENSIONS)
+    def show_combine_files_dialog(self, filelist: list):
+        """Вывод диалога объединения файлов и запуск обработки результата"""
+        dlg = CombineDialog(self, filelist)
         if dlg.exec_():
             # noinspection PyTypeChecker
-            self._open_or_combine_files('', dlg.get_filelist())
+            self.open_or_combine_files('', dlg.get_filelist())
 
     @Slot()
     def on_actionNew_triggered(self):  # pylint: disable=invalid-name
-        self._show_combine_files_dialog([])
-        # settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
-        # lastfn = settings.value('lastfilename', '')
-
-        # directory = os.path.dirname(lastfn)
-        # to_open, _ = QFileDialog.getOpenFileNames(self, "Выберите файлы PDF",
-        #                                         directory, "Поддерживаемые файлы (*.pdf *.png *.jpg *.jpeg)")
-        # filelist = [fl for fl in to_open if os.path.splitext(fl)[1].lower() in ['.pdf', '.png', '.jpg', '.jpeg']]
-        # if filelist:
-        #     self.open('', filelist)
+        """Обработчик выбора пункта меню <Создать>"""
+        self.show_combine_files_dialog([])
 
     @Slot()
     def on_actionOpen_triggered(self):  # pylint: disable=invalid-name
-        settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
-        lastfn = settings.value('lastfilename', '')
+        """Обработчик выбора пункта меню <Открыть>"""
+        lastfn = params.get_lastfilename()
 
         directory = os.path.dirname(lastfn)
         to_open, _ = QFileDialog.getOpenFileName(
@@ -356,13 +395,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in const.VALID_EXTENSIONS).strip()})",
         )
         if to_open:
-            self._open_or_combine_files(QUrl.fromLocalFile(to_open))
+            self.open_or_combine_files(QUrl.fromLocalFile(to_open))
 
     @Slot()
     def on_actionClose_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Закрыть>"""
         self.pdf_view.close()
         # noinspection PyTypeChecker
-        self._open_or_combine_files('')
+        self.open_or_combine_files('')
 
     def _check_new_file(self, outfile, ext, ind, overwrite_all):
         if ind < 10000:
@@ -391,7 +431,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         return res
 
     def _censore_page(self, doc, pno: int, p: SaveParams):  # noqa: ignore=C901
-        '''Деперсонификация одной страницы файла PDF
+        """Деперсонификация одной страницы файла PDF
 
         Args:
             doc (fitz doc): документ PDF
@@ -400,7 +440,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         Returns:
             (Pixmap): результат рендеринга и деперсонификации
-        '''
+        """
 
         zoom = p.dpi / 72
         mat = fitz.Matrix(zoom, zoom)
@@ -655,14 +695,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
                         r.x1 = int(r.x1)
                         r.y0 = int(r.y0)
                         r.y1 = int(r.y1)
-                        # noinspection PyUnboundLocalVariable
-                        crop_img = img.crop(r)
-                        # # Use GaussianBlur directly to blur the image 10 times.
-                        # blur_image = crop_img.filter(ImageFilter.GaussianBlur(radius=10))
-                        # blur_image = crop_img.filter(ImageFilter.BoxBlur(radius=10))
-                        img_small = crop_img.resize((crop_img.size[0] // pixelator, crop_img.size[1] // pixelator))
-                        blur_image = img_small.resize(crop_img.size, PILImage.NEAREST)
-                        img.paste(blur_image, r)
+
+                        if p.censore == 1:
+                            crop_img = img.crop(r)
+                            img_small = crop_img.resize((crop_img.size[0] // pixelator, crop_img.size[1] // pixelator))
+                            blur_image = img_small.resize(crop_img.size, PILImage.NEAREST)
+                            img.paste(blur_image, r)
+                        else:
+                            draw = ImageDraw.Draw(img)
+                            draw.rectangle(r, fill=(255, 255, 255, 0))
+
                     except Exception:
                         pass
 
@@ -733,7 +775,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             self.setDisabled(True)
             QApplication.processEvents()
             ind = 0
-            doc = self.pdf_view.m_doc
+            doc = self.pdf_view.doc
             for pages in pageranges:
                 for pno in pages:
                     if 0 <= pno < doc.page_count:
@@ -747,7 +789,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # outfile, _ = os.path.splitext(self.m_currentFileName)
 
-        if p.format in [FileFormat.FMT_JPEG, FileFormat.FMT_PNG]:
+        if p.format in (FileFormat.FMT_JPEG, FileFormat.FMT_PNG):
             m_singles = True
         else:
             m_singles = p.singles
@@ -763,18 +805,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             )
 
             outfile, ext = os.path.splitext(outfile)
-            # для debian/GNOME
-            if ext.lower() != ext_tp:
-                ext = ext_tp
+            if outfile:
+                # для debian/GNOME
+                if ext.lower() != ext_tp:
+                    ext = ext_tp
         else:
             outfile, _ = QFileDialog.getSaveFileName(
                 self, self._title, os.path.dirname(self._current_filename), r'Файл PDF (*.pdf)'
             )
-            _, ext = os.path.splitext(outfile)
-            # для debian/GNOME
-            if ext.lower() != ".pdf":
-                ext = ".pdf"
-                outfile += ext
+            if outfile:
+                _, ext = os.path.splitext(outfile)
+                # для debian/GNOME
+                if ext.lower() != ".pdf":
+                    ext = ".pdf"
+                    outfile += ext
 
         if not outfile:
             return
@@ -790,11 +834,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         QApplication.processEvents()
 
         # doc = fitz.open(self.m_currentFileName)
-        doc = self.pdf_view.m_doc
+        doc = self.pdf_view.doc
 
         zoom = p.dpi / 72
         mat = fitz.Matrix(zoom, zoom)
-        if p.format in [FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG] and not m_singles:
+        if p.format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG) and not m_singles:
             # noinspection PyUnresolvedReferences
             pdfout = fitz.open()
         ind = 0
@@ -815,7 +859,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Эксклюзивный режим ...
         if (
-            self._real_file
+            self._is_real_file
             and p.format == FileFormat.FMT_PDF
             and p.pgmode == PageMode.PG_ALL
             and (not m_singles)
@@ -841,7 +885,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             for pno in range(approx_pgcount):
                 # if p.rotation != PageRotation.rtNone:
                 # Пытаемся повернуть страницу в соответствии с отображаемым на экране объектом
-                doc[pno].set_rotation((self.pdf_view.m_doc[pno].rotation + (0, 270, 90, 180)[p.rotation.value]) % 360)
+                doc[pno].set_rotation((self.pdf_view.doc[pno].rotation + (0, 270, 90, 180)[p.rotation.value]) % 360)
                 self.ui.progress_bar.setValue(pno * 95 // approx_pgcount)
                 QApplication.processEvents()
             try:
@@ -1009,7 +1053,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
                         if p.rotation != PageRotation.RT_NONE:
                             doc[pno].set_rotation(old_rot)
 
-            if p.format in [FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG] and not m_singles:
+            if p.format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG) and not m_singles:
                 try:
                     pdfout.save(
                         outfile,
@@ -1030,70 +1074,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         QApplication.processEvents()
 
         self.statusBar().showMessage('Готово!')
-        if p.format in [FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG] and not m_singles:
+        if p.format in (FileFormat.FMT_PDF, FileFormat.FMT_PDF_JPEG) and not m_singles:
             # if platform.system() == 'Windows':
             #     subprocess.Popen(('start', outfile), shell = True)
             if self._pdfviewer_cmd:
                 subprocess.Popen((self._pdfviewer_cmd, outfile))
         QMessageBox.information(self, "Сохранение файла/файлов", "Готово!")
-
-    def _tableanalize_process(self, strong):
-        self._title = "Экспорт табличных данных в XLSX"
-        outfile, _ = QFileDialog.getSaveFileName(
-            self, self._title, os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"'
-        )
-        if outfile:
-            _, ext = os.path.splitext(outfile)
-            # для debian/GNOME
-            if ext.lower() != '.xlsx':
-                outfile += '.xlsx'
-
-            self.statusBar().showMessage('Экспорт табличных данных в XLSX...')
-            self.ui.progress_bar.setValue(0)
-            self.ui.progress_bar.setVisible(True)
-            self.setDisabled(True)
-            QApplication.processEvents()
-
-            try:
-                if os.path.isfile(outfile):
-                    os.remove(outfile)
-                # doc = fitz.open(self.m_currentFileName)
-                doc = self.pdf_view.m_doc
-            except Exception as e:
-                QMessageBox.critical(self, self._title, f"Ошибка: {e}")
-                return
-
-            workbook = xlsxwriter.Workbook(outfile)
-            worksheet = workbook.add_worksheet()
-
-            cell_format = workbook.add_format()
-            cell_format.set_align('center')
-            cell_format.set_align('vcenter')
-            cell_format.set_text_wrap()
-            cell_format.set_border(1)
-
-            pgcount = len(doc)
-            start_row = 0
-            try:
-                # for pno in range(len(doc)):
-                for pno in enumerate(doc):
-                    start_row += parse_page_tables(doc[pno], worksheet, start_row, cell_format, strong)
-                    self.ui.progress_bar.setValue(pno * 99 // pgcount)
-                    QApplication.processEvents()
-
-                workbook.close()
-            except Exception as e:
-                QMessageBox.critical(self, self._title, f"Ошибка: {e}")
-                return
-
-            self.ui.progress_bar.setValue(100)
-            QApplication.processEvents()
-            if start_row > 0:
-                if self._xlseditor_cmd:
-                    subprocess.Popen((self._xlseditor_cmd, outfile))
-                self.statusBar().showMessage('Готово!')
-            else:
-                QMessageBox.warning(self, self._title, "Табличные данные найти не удалось...")
 
     def _export_pd_process(self, recognize_qr):
         self._title = "Экспорт данных в XLSX"
@@ -1116,7 +1102,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
                 if os.path.isfile(outfile):
                     os.remove(outfile)
                 # doc = fitz.open(self.m_currentFileName)
-                doc = self.pdf_view.m_doc
+                doc = self.pdf_view.doc
             except Exception as e:
                 QMessageBox.critical(self, self._title, f"Ошибка: {e}")
                 return
@@ -1268,12 +1254,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     def on_actionSaveAs_triggered(self):  # pylint: disable=invalid-name
         dlg = SaveAsDialog(self)
         if dlg.exec_():
-            self._saveas_process(dlg.params(), False)
-
-            self.ui.progress_bar.setVisible(False)
-            self.setDisabled(False)
-            self.statusBar().showMessage('')
-            QApplication.processEvents()
+            self._saveas_process(dlg.params, False)
+            self.progress_status_turnoff()
 
     @Slot()
     def on_actionCensore_triggered(self):  # pylint: disable=invalid-name
@@ -1282,13 +1264,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             # Отключаем режим small_glyph_heights, т.к. с ним некорректно определяется положение "КУДА" и "ОТ КОГО"
             fitz.Tools().set_small_glyph_heights(False)
 
-            dlg.params().format = dlg.params().format_censore
-            self._saveas_process(dlg.params(), True)
+            dlg.params.format = dlg.params.format_censore
+            self._saveas_process(dlg.params, True)
 
-            self.ui.progress_bar.setVisible(False)
-            self.setDisabled(False)
-            self.statusBar().showMessage('')
-            QApplication.processEvents()
+            self.progress_status_turnoff()
 
             # Для наилучшего распознания текстового слоя...
             fitz.Tools().set_small_glyph_heights(True)
@@ -1296,145 +1275,118 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     @Slot()
     def on_actionTablesAnalizeStrong_triggered(self):  # pylint: disable=invalid-name
         self._tableanalize_process(True)
-        self.ui.progress_bar.setVisible(False)
-        self.setDisabled(False)
-        self.statusBar().showMessage('')
-        QApplication.processEvents()
+        self.progress_status_turnoff()
 
     @Slot()
     def on_actionTablesAnalizeSimple_triggered(self):  # pylint: disable=invalid-name
         self._tableanalize_process(False)
-        self.ui.progress_bar.setVisible(False)
-        self.setDisabled(False)
-        self.statusBar().showMessage('')
-        QApplication.processEvents()
+        self.progress_status_turnoff()
 
     @Slot()
     def on_actionPDexport_triggered(self):  # pylint: disable=invalid-name
         self._export_pd_process(False)
-        self.ui.progress_bar.setVisible(False)
-        self.setDisabled(False)
-        self.statusBar().showMessage('')
-        QApplication.processEvents()
+        self.progress_status_turnoff()
 
     @Slot()
     def on_actionPDexportQR_triggered(self):  # pylint: disable=invalid-name
         self._export_pd_process(True)
-        self.ui.progress_bar.setVisible(False)
-        self.setDisabled(False)
-        self.statusBar().showMessage('')
+        self.progress_status_turnoff()
+
+    def _tableanalize_process(self, strong: bool):
+        self._title = 'Экспорт табличных данных в XLSX'
+
+        # Получаем от пользователя имя нового файла
+        outfile = self.get_savefilename(
+            os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
+        )
+        # Имя файла не выбрано
+        if not outfile:
+            return
+
+        # Включаем прогресс-бар и блокируем интерфейс
+        self.progress_status_start(self._title + '...')
+
+        # Запускаем парсинг таблиц на всех страницах документа
+        try:
+            rows_count = parse_tables(self.pdf_view.doc, outfile, strong, self.progress_status_refresh)
+        except Exception as e:
+            self.show_error_message(e)
+            return
+
+        # Отключаем прогресс-бар и разблокируем интерфейс
+        self.progress_status_final(
+            rows_count > 0,
+            command=self._xlseditor_cmd,
+            arg=outfile,
+            fault_message='Табличные данные найти не удалось...',
+        )
+
+    def get_savefilename(self, file_dir: str, file_filter: str, file_ext: str, file_delete: bool = False) -> str:
+        """Диалог выбора имени файла для сохранения"""
+        outfile, _ = QFileDialog.getSaveFileName(self, self._title, file_dir, file_filter)
+        # Имя файла не выбрано
+        if not outfile:
+            return ''
+
+        if file_ext:  # для debian/GNOME
+            _, ext = os.path.splitext(outfile)
+            if ext.lower() != file_ext:  # добавляем расширение, если его нет
+                outfile += file_ext
+
+        if file_delete:
+            # Пытаемся удалить файл, если он существует
+            if os.path.isfile(outfile):
+                try:
+                    os.remove(outfile)
+                except PermissionError as e:
+                    self.show_error_message(e)
+                    return ''
+
+        return outfile
+
+    def progress_status_refresh(self, procent: int):
+        """Обновление прогресс-бара"""
+        self.ui.progress_bar.setValue(procent)
         QApplication.processEvents()
 
-    @Slot()
-    def on_actionQuit_triggered(self):  # pylint: disable=invalid-name
-        self.close()
+    def progress_status_turnoff(self):
+        """Отключение прогресс-бара с разблокированием интерфейса"""
+        self.ui.progress_bar.setVisible(False)
+        self.setDisabled(False)
+        # self.statusBar().showMessage('')
+        QApplication.processEvents()
 
-    @Slot()
-    def on_actionHome_triggered(self):  # pylint: disable=invalid-name
-        if self.pdf_view.page_count > 0:
-            self._change_page_number(0)
+    def progress_status_start(self, status_message: str = ''):
+        """Включение прогресс-бара с блокированием интерфейса и вывод статус-сообщения"""
+        self.statusBar().showMessage(status_message)
+        self.ui.progress_bar.setValue(0)
+        self.ui.progress_bar.setVisible(True)
+        self.setDisabled(True)
+        QApplication.processEvents()
 
-    @Slot()
-    def on_actionEnd_triggered(self):  # pylint: disable=invalid-name
-        if self.pdf_view.page_count > 0:
-            self._change_page_number(self.pdf_view.page_count - 1)
+    def progress_status_final(
+        self,
+        is_success: bool = False,
+        success_message: str = '',
+        fault_message: str = '',
+        command: str = '',
+        arg: str = '',
+    ):  # pylint: disable=too-many-arguments
+        """Финальное сообщение закончившегося процесса"""
 
-    @Slot()
-    def on_actionAbout_triggered(self):  # pylint: disable=invalid-name
-        QMessageBox.about(self, "О программе " + const.APP_TITLE, ABOUT_TEXT)
+        if is_success:
+            self.statusBar().showMessage('Готово!')
+            if command:
+                subprocess.Popen((command, arg))  # pylint: disable=consider-using-with
+            if success_message:
+                QMessageBox.information(self, self._title, success_message)
+        else:
+            if fault_message:
+                QMessageBox.warning(self, self._title, fault_message)
+            self.statusBar().showMessage('')
 
-    @Slot()
-    def on_actionZoom_In_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.zoom_in()
-
-    @Slot()
-    def on_actionZoom_Out_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.zoom_out()
-
-    @Slot()
-    def on_actionZoom_Normal_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.set_zoom_factor(1.0)
-
-    @Slot()
-    def on_actionPrevious_Page_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.goto_prev_page()
-
-    @Slot()
-    def on_actionNext_Page_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.goto_next_page()
-
-    @Slot()
-    def on_actionCbdPageImageCopy_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.copy_page_image_to_clipboard()
-
-    @Slot()
-    def on_actionCbdRectImageCopy_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.copy_rect_image_to_clipboard()
-
-    @Slot()
-    def on_actionCbdRectTextCopy_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.copy_rect_text_to_clipboard()
-
-    @Slot()
-    def on_actionCbdRectTextTrimCopy_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.copy_rect_text_to_clipboard(True)
-
-    @Slot()
-    def on_actionRectRecognizeText_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, trim=False)
-
-    @Slot()
-    def on_actionRectRecognizeTextTrim_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, trim=True)
-
-    @Slot()
-    def on_actionRectRecognizeQR_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.recognize_qr_and_copy_to_clipboard()
-
-    @Slot()
-    def on_actionCbdRectsInfoCopy_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.copy_rects_info_to_clipboard(False)
-
-    @Slot()
-    def on_actionCbdRectsAllInfoCopy_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.copy_rects_info_to_clipboard(True)
-
-    @Slot()
-    def on_actionSelectAll_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.select_all()
-
-    @Slot()
-    def on_actionRemoveSelection_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.remove_selection()
-
-    @Slot()
-    def on_actionRemoveAllSelections_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.remove_selection(True)
-
-    @Slot()
-    def on_actionRectMode_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.switch_rect_mode()
-
-    @Slot()
-    def on_actionPageRotateLeft_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.rotate_pages(1, False)
-
-    @Slot()
-    def on_actionPageRotateRight_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.rotate_pages(2, False)
-
-    @Slot()
-    def on_actionPageRotate180_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.rotate_pages(3, False)
-
-    @Slot()
-    def on_actionPagesRotateLeft_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.rotate_pages(1, True)
-
-    @Slot()
-    def on_actionPagesRotateRight_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.rotate_pages(2, True)
-
-    @Slot()
-    def on_actionPagesRotate180_triggered(self):  # pylint: disable=invalid-name
-        self.pdf_view.rotate_pages(3, True)
+    def show_error_message(self, e: BaseException):
+        stack_trace = traceback.format_tb(sys.exc_info()[2])
+        for line in stack_trace:
+            print(line)
+        QMessageBox.critical(self, self._title, f"Ошибка: {e}")

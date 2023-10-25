@@ -141,4 +141,4 @@ venv.bak/
 setup.cfg
 pyproject.toml
 .idea/
-.pylintrc
+dotableanalize.py
