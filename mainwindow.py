@@ -11,6 +11,9 @@ import fitz
 from PySide2.QtCore import Qt
 from PySide2.QtCore import QUrl
 from PySide2.QtCore import Slot
+from PySide2.QtGui import QCloseEvent
+from PySide2.QtGui import QDragEnterEvent
+from PySide2.QtGui import QDropEvent
 from PySide2.QtWidgets import QAbstractSpinBox
 from PySide2.QtWidgets import QApplication
 from PySide2.QtWidgets import QFileDialog
@@ -472,7 +475,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         logger.error('', exc_info=True)
         QMessageBox.critical(self, self.title, f"Ошибка: {e}")
 
-    def dragEnterEvent(self, event):
+    ###########################################################################
+    # Обработчики событий
+    ###########################################################################
+
+    def closeEvent(self, event: QCloseEvent):  # pylint: disable=unused-argument
+        """Обработчик события Close"""
+        logger.info('Выход из приложения...')
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
         """Обработчик события DragEnter"""
 
         # Проверяем формат перетаскиваемого объекта
@@ -480,7 +491,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             # Подтверждаем готовность принять объект
             event.acceptProposedAction()
 
-    def dropEvent(self, event):
+    def dropEvent(self, event: QDropEvent):
         """Обработчик события Drop"""
 
         # Получаем список ссылок
@@ -506,7 +517,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         event.acceptProposedAction()
 
     ###########################################################################
-    # Обработчики событий QT
+    # Обработчики событий (Слоты QT)
     ###########################################################################
 
     @Slot()

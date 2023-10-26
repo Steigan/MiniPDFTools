@@ -3,6 +3,7 @@
 """
 
 import io
+import logging
 import re
 from itertools import groupby
 
@@ -14,6 +15,18 @@ from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
 from params import SaveParams
+
+
+# Настраиваем логирование
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# настройка обработчика и форматировщика для logger2
+handler = logging.FileHandler('log.log')
+handler.setFormatter(logging.Formatter('%(name)s %(asctime)s %(levelname)s %(message)s'))
+
+# добавление обработчика к логгеру
+logger.addHandler(handler)
 
 
 def censore_page(doc, pno: int, param: SaveParams, add_selection_callback=None):  # noqa: ignore=C901
@@ -29,14 +42,11 @@ def censore_page(doc, pno: int, param: SaveParams, add_selection_callback=None):
         (Pixmap) или None: результат рендеринга и деперсонификации
     """
 
-    zoom = param.dpi / 72
-    mat = fitz.Matrix(zoom, zoom)
-    pixelator = param.dpi // 20
-    page = doc[pno]
-    anon_rects = []
-    fio = []
-    addr = []
+    page = doc[pno]  # обрабатываемая страница документа
+    anon_rects = []  # список участков с персональными данными
+    qr_txt = ''  # Для текста из банковского QR кода
 
+    # Перебираем все картинки на странице в поисках QR кода
     for docimg in doc.get_page_images(pno, full=True):
         # docimg[2] и docimg[3] - это ширина и высота изображения в исходных пикселях
         # shrink - матрица сжатия исходного изображения
@@ -57,22 +67,22 @@ def censore_page(doc, pno: int, param: SaveParams, add_selection_callback=None):
         pix = fitz.Pixmap(doc, docimg[0])
         temp = io.BytesIO(pix.tobytes())
 
+        # Загружаем картинку в Pillow
         img = PILImage.open(temp)
 
         # Левый верхний пиксель изображения черный??? Тогда инвертируем цвета
         if img.getpixel(xy=(0, 0)) == 0:
             img = ImageOps.invert(img)
+
         # Распознаем QR коды
         decocde_qr = decode(img, [ZBarSymbol.QRCODE])
-        qr_txt = ''
-        fio = []
-        addr = []
+
         # Обходим все распознанные QR коды
         for qr_obj in decocde_qr:
             txt = qr_obj.data.decode('utf-8')
             # Это банковский QR код?
             if txt.startswith('ST00012|'):
-                if not qr_txt:
+                if not qr_txt:  # сохраняем первый попавшийся
                     qr_txt = txt
 
                 # Расширяем границы QR (в исходных координатах изображения)
@@ -89,186 +99,236 @@ def censore_page(doc, pno: int, param: SaveParams, add_selection_callback=None):
                 # Добавляем QR КОД в список скрываемых полей
                 anon_rects.append([r, 'QR'])
 
-        # Хоть один банковский QR код найден?
-        if qr_txt:
-            # Выделяем ключевые слова из ФИО
-            try:
-                fio = [w for w in re.search(r'\|lastName=([^|]*)', qr_txt)[1].split(' ') if len(w) > 3]
-            except (TypeError, ValueError):
-                fio = []
-            # Выделяем ключевые слова из адреса
-            try:
-                addr = [w for w in re.search(r'\|payerAddress=([^|]*)', qr_txt)[1].split(' ') if len(w) > 3]
-            except (TypeError, ValueError):
-                addr = []
-            # print(fio, addr)
+    fio_keywords = []  # список ключевых слов из ФИО
+    addr_keywords = []  # список ключевых слов из адреса
 
-    # !!! page.rect.width - это ширина с учетом поворота страницы !!!
-    hcenter = page.rect.width // 2
-    vcenter = page.rect.height // 2
-    # print(hcenter, vcenter)
+    # Хоть один банковский QR код найден?
+    if qr_txt:
+        # Выделяем ключевые слова из ФИО
+        try:
+            fio_keywords = [w for w in re.search(r'\|lastName=([^|]*)', qr_txt)[1].split(' ') if len(w) > 3]
+        except (TypeError, ValueError):
+            fio_keywords = []
+        # Выделяем ключевые слова из адреса
+        try:
+            addr_keywords = [w for w in re.search(r'\|payerAddress=([^|]*)', qr_txt)[1].split(' ') if len(w) > 3]
+        except (TypeError, ValueError):
+            addr_keywords = []
+
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # !!! Документ ПД КТК формируется в портретном положении листа А4 корешком вниз !!!
+    # !!! отсчет координат обычный - от угла сверху слева                           !!!
+    # !!! page.rect.width - это ширина с учетом поворота страницы на 90, поэтому в  !!!
+    # !!!                   исходных координатах это высота                         !!!
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    # находим примерный центр страницы документа
+    vert_center = page.rect.width // 2
+    hor_center = page.rect.height // 2
 
     # Получаем список слов на странице с их координатами
     words = page.get_text("words")
 
-    r_ls = r_period = r_kuda = r_kogo = None
-    r_fio_addr = []
-    # rFIO = []
-    r_fio_grpd = []
-    # rAddr = []
-    r_addr_grpd = []
+    # Переменные для fitz.Rect областей с соответствующими словами
+    rect_ls = rect_period = rect_kuda = rect_kogo = None
+    # Список fitz.Rect областей, содержащих части ФИО и адреса
+    rects_fio_addr = []
 
     # Обходим список слов на странице
     for w in words:
-        # if w[4] in fio:
-        #     r = fitz.Rect(w[:4])
-        #     rFIO.append(r)
-        # if w[4] in addr:
-        #     r = fitz.Rect(w[:4])
-        #     rAddr.append(r)
-        if w[4] in fio or w[4] in addr:
+        if w[4] in fio_keywords or w[4] in addr_keywords:  # это часть имени или адреса
             r = fitz.Rect(w[:4])
-            r_fio_addr.append(r)
-        if w[4] == 'КУДА:':
-            r_kuda = fitz.Rect(w[:4])
-        if w[4] == 'КОГО:':
-            r_kogo = fitz.Rect(w[:4])
-        if w[4] == 'л.с':
-            r_ls = fitz.Rect(w[:4])
-        if w[4] == 'период:':
-            r_period = fitz.Rect(w[:4])
+            rects_fio_addr.append(r)  # добавляем в общий список все похожие варианты
+        if w[4] == 'КУДА:':  # это корешок с адресом доставки
+            rect_kuda = fitz.Rect(w[:4])
+        if w[4] == 'КОГО:':  # это корешок с отправителем
+            rect_kogo = fitz.Rect(w[:4])
+        if w[4] == 'л.с':  # это л/с в разделе показаний ИПУ
+            rect_ls = fitz.Rect(w[:4])
+        if w[4] == 'период:':  # это период в разделе показаний ИПУ
+            rect_period = fitz.Rect(w[:4])
 
-    if r_kuda and r_kogo:
-        hght = r_kuda.y1 - r_kogo.y1 - 0
+    if rect_kuda and rect_kogo:  # почтовый корешок найден
+        # Определяем примерные границы области, в которой находится адрес доставки
+        hght = rect_kuda.y1 - rect_kogo.y1 - 0
         lft = 100
 
-        r_kuda.y0 = r_kuda.y1 - hght
-        r_kuda.x1 = r_kuda.x0 - 1
-        r_kuda.x0 = lft
-        anon_rects.append([r_kuda, 'POST'])
+        rect_kuda.y0 = rect_kuda.y1 - hght
+        rect_kuda.x1 = rect_kuda.x0 - 1
+        rect_kuda.x0 = lft
+        # Сохраняем область, в которой находится адрес доставки
+        anon_rects.append((rect_kuda, 'POST'))
 
-    if r_ls and r_period:
-        r_ls.y0 = r_period.y1 + 1
-        r_ls.x1 += 1
-        r_ls.y1 += 1
-        anon_rects.append([r_ls, 'IPU'])
+    if rect_ls and rect_period:  # раздел ИПУ найден
+        # Определяем примерные границы области, в которой находится ФИО в разделе ИПУ
+        rect_ls.y0 = rect_period.y1 + 1
+        rect_ls.x1 += 1
+        rect_ls.y1 += 1
+        # Сохраняем область, в которой находится адрес доставки
+        anon_rects.append((rect_ls, 'IPU'))
 
-    def rectsort_x0_key(x):
+    def rectsort_x0_key(x):  # функция сортировки областей (по левому X)
         return x.x0
 
-    left_fio_ind = 1
-    right_fio_ind = 1
-    max_y = 1000
-    if r_kogo:
-        max_y = min(r_kogo.y0, r_kogo.y1)
+    # Переменные для fitz.Rect областей с соответствующими словами
+    rect_fio1 = rect_fio2 = rect_addr1 = rect_addr2 = None
 
-    r_fio_addr.sort(key=rectsort_x0_key)
-    for grp, items in groupby(r_fio_addr, key=rectsort_x0_key):
+    left_fioaddr_ind = 0  # статус обнаружения ФИО/Адр слева (0-нет, 1-нашли первую область, 2-нашли обе)
+    right_fioaddr_ind = 0  # статус обнаружения ФИО/Адр справа (0-нет, 1-нашли первую область, 2-нашли обе)
+
+    # Определяем максимум по Y: если найдена область "от кого",
+    # то берем минимальный Y для этой области (над надписью "от кого"),
+    # иначе берем весь лист
+    if rect_kogo:
+        max_y = min(rect_kogo.y0, rect_kogo.y1)
+    else:
+        max_y = 1000
+
+    # Сортируем области по их левому X
+    rects_fio_addr.sort(key=rectsort_x0_key)
+    # Группируем области по их левому X и обходим
+    for grp, items in groupby(rects_fio_addr, key=rectsort_x0_key):
+        # Создаем новую область с заданным левым X
         r = fitz.Rect(grp, 1000, 0, 0)
+
+        # Обходим все имеющиеся варианты остальных координат
+        # в результате чего:
+        # - верхний Y будет равен наименьшему Y
+        # - нижний Y будет равен наибольшему Y
+        # - правый X будет равен последнему попавшемуся правому X (они все равны в ПД КТК)
         for item in items:
             r.y0 = min(r.y0, item.y0, item.y1)
             r.y1 = max(r.y1, item.y0, item.y1)
             r.x1 = item.x1
-        if r.x0 < vcenter:
-            if (r.y1 > hcenter) and (r.y0 < max_y):
-                if left_fio_ind == 1:
-                    r_fio_grpd.append(r)
-                    left_fio_ind = 2
-                elif left_fio_ind == 2:
-                    r_addr_grpd.append(r)
-                    left_fio_ind = 0
-            else:
-                if right_fio_ind == 1:
-                    r_fio_grpd.append(r)
-                    right_fio_ind = 2
-                elif right_fio_ind == 2:
-                    r_addr_grpd.append(r)
-                    right_fio_ind = 0
 
-    is_do_addr = False
-    if len(r_fio_grpd) > 0:
-        r = fitz.Rect(r_fio_grpd[0])
-        if len(r_addr_grpd) > 0:
-            r.y0 = min(r.y0, r_addr_grpd[0].y0)
-            r.y1 = max(r.y1, r_addr_grpd[0].y1)
-            is_do_addr = True
-        r.y0 -= 20
-        r.y1 += 20
-        r.x1 += 1
-        anon_rects.append([fitz.Rect(r), 'FIO'])
+        # Левый X находится на правой половине листа А4? - тогда область не нужна
+        if r.x0 > hor_center:
+            continue
 
-    if is_do_addr:
-        # noinspection PyUnboundLocalVariable
-        r.x0 = r_addr_grpd[0].x0
-        r.x1 = r_addr_grpd[0].x1 + 1
-        anon_rects.append([fitz.Rect(r), 'ADDR'])
-    elif len(r_addr_grpd) > 0:
-        r = fitz.Rect(r_addr_grpd[0])
-        r.y0 -= 20
-        r.y1 += 20
-        r.x1 += 1
-        anon_rects.append([fitz.Rect(r), 'ADDR'])
+        # Нижний Y находится на нижней половине листа, верхний Y внизу в пределах листа?
+        if (r.y1 > vert_center) and (r.y0 < max_y):
+            # это левая сторона печатного варианта ПД КТК
+            if left_fioaddr_ind == 0:
+                # нашли первую область ФИО/Адр - ФИО слева
+                left_fioaddr_ind = 1
+                r.x1 += 1  # увеличиваем область на 1 влево
+                r.y0 -= 20  # увеличиваем область на 20 вверх
+                r.y1 += 20  # увеличиваем область на 20 вниз
+                rect_fio1 = r
 
-    is_do_addr = False
-    if len(r_fio_grpd) > 1:
-        r = r_fio_grpd[1]
-        if len(r_addr_grpd) > 1:
-            r.y0 = min(r.y0, r_addr_grpd[1].y0)
-            r.y1 = max(r.y1, r_addr_grpd[1].y1)
-            is_do_addr = True
-        r.y0 -= 20
-        r.y1 += 20
-        r.x1 += 1
-        anon_rects.append([fitz.Rect(r), 'FIO', False])
+            elif left_fioaddr_ind == 1:
+                # нашли вторую область ФИО/Адр - Адр слева
+                left_fioaddr_ind = 2
+                r.x1 += 1  # увеличиваем область на 1 влево
+                r.y0 -= 20  # увеличиваем область на 20 вверх
+                r.y1 += 20  # увеличиваем область на 20 вниз
+                # выравниваем ФИО и Адр в ровный столбик
+                r.y0 = min(r.y0, rect_fio1.y0)
+                r.y1 = max(r.y1, rect_fio1.y1)
+                rect_fio1.y0 = r.y0
+                rect_fio1.y1 = r.y1
+                rect_addr1 = r
 
-    if is_do_addr:
-        r.x0 = r_addr_grpd[1].x0
-        r.x1 = r_addr_grpd[1].x1 + 1
-        anon_rects.append([fitz.Rect(r), 'ADDR'])
-    elif len(r_addr_grpd) > 1:
-        r = fitz.Rect(r_addr_grpd[1])
-        r.y0 -= 20
-        r.y1 += 20
-        r.x1 += 1
-        anon_rects.append([fitz.Rect(r), 'ADDR'])
+        else:  # Нижний Y находится на верхней половине листа или верхний Y внизу за пределами листа
+            # это правая сторона печатного варианта ПД КТК
+            if right_fioaddr_ind == 0:
+                # нашли первую область ФИО/Адр - ФИО справа
+                right_fioaddr_ind = 1
+                r.x1 += 1  # увеличиваем область на 1 влево
+                r.y0 -= 20  # увеличиваем область на 20 вверх
+                r.y1 += 20  # увеличиваем область на 20 вниз
+                rect_fio2 = r
 
-    md_list = ['FIO', 'ADDR', 'POST', 'IPU', 'QR']
-    chks_list = [param.censore_fio, param.censore_addr, param.censore_post, param.censore_ipu, param.censore_qr]
+            elif right_fioaddr_ind == 1:
+                # нашли вторую область ФИО/Адр - Адр справа
+                right_fioaddr_ind = 2
+                r.x1 += 1  # увеличиваем область на 1 влево
+                r.y0 -= 20  # увеличиваем область на 20 вверх
+                r.y1 += 20  # увеличиваем область на 20 вниз
+                # выравниваем ФИО и Адр в ровный столбик
+                r.y0 = min(r.y0, rect_fio2.y0)
+                r.y1 = max(r.y1, rect_fio2.y1)
+                rect_fio2.y0 = r.y0
+                rect_fio2.y1 = r.y1
+                rect_addr2 = r
 
+    # Добавляем обнаруженные и обработанные области в общий список
+    if rect_fio1:
+        anon_rects.append((rect_fio1, 'FIO'))
+    if rect_fio2:
+        anon_rects.append((rect_fio2, 'FIO'))
+    if rect_addr1:
+        anon_rects.append((rect_addr1, 'ADDR'))
+    if rect_addr2:
+        anon_rects.append((rect_addr2, 'ADDR'))
+
+    # Словарь для значений чекбоксов из настроек по каждой категории персданных
+    check_dict = {
+        'FIO': param.censore_fio,
+        'ADDR': param.censore_addr,
+        'POST': param.censore_post,
+        'IPU': param.censore_ipu,
+        'QR': param.censore_qr,
+    }
+
+    # Если не выделяем области, а формируем картинку
     if not param.setselectionsonly:
+        zoom = param.dpi / 72  # зум-фактор для растеризации изображения
+        mat = fitz.Matrix(zoom, zoom)  # матрица трансформирования для растеризации изображения
+        pixelator = param.dpi // 20  # коэффициент пикселизации конфиденциальной информации
+
         # Растеризуем страницу и запихиваем изображение в PIL
         pix = page.get_pixmap(matrix=mat)
         pix.set_dpi(param.dpi, param.dpi)
         img = PILImage.frombytes('RGB', (pix.width, pix.height), pix.samples)
 
+    # Пробегаем по всем найденным областям
     for anon_rect in anon_rects:
-        if chks_list[md_list.index(anon_rect[1])]:
-            if param.setselectionsonly and (add_selection_callback is not None):
+        # Если в настройках обработка такого типа данных не включена, то continue
+        if not check_dict[anon_rect[1]]:
+            continue
+
+        # Если просто выделяем области, а не формируем картинку, запускаем callback
+        if param.setselectionsonly:
+            if add_selection_callback is not None:
                 add_selection_callback(pno, anon_rect[0])
-            else:
-                # noinspection PyTypeChecker
-                r = anon_rect[0] * page.rotation_matrix * mat
-                try:
-                    r.x0 = int(r.x0)
-                    r.x1 = int(r.x1)
-                    r.y0 = int(r.y0)
-                    r.y1 = int(r.y1)
+            continue
 
-                    if param.censore == 1:
-                        crop_img = img.crop(r)
-                        img_small = crop_img.resize((crop_img.size[0] // pixelator, crop_img.size[1] // pixelator))
-                        blur_image = img_small.resize(crop_img.size, PILImage.NEAREST)
-                        img.paste(blur_image, r)
-                    else:
-                        draw = ImageDraw.Draw(img)
-                        draw.rectangle(r, fill=(255, 255, 255, 0))
+        # Трансформируем координаты в масштаб изображения
+        r = anon_rect[0] * page.rotation_matrix * mat
+        # Замазываем участок
+        censore_img(img, r, pixelator, param.censore)
 
-                except Exception:
-                    pass
-
+    # Если просто выделяем области, а не формируем картинку, выходим с None
     if param.setselectionsonly:
         return None
 
+    # Обратно конвертируем картинку в формат fitz.Pixmap и возвращаем...
     samples = img.tobytes()
     pix = fitz.Pixmap(fitz.csRGB, img.size[0], img.size[1], samples)
     return pix
+
+
+def censore_img(img: PILImage.Image, rect, pixelator: int, mode: int = 1):
+    """Замазать участок изображения
+
+    Args:
+        img (PILImage.Image): изображение
+        rect (fitz.Rect): область для "деперсонификации"
+        pixelator (int): коэффициент пикселизации
+        mode (int, optional): режим 1-пикселизация, 2 или др.-заливка белым. По умолчанию 1.
+    """
+    rect.x0 = int(rect.x0)
+    rect.x1 = int(rect.x1)
+    rect.y0 = int(rect.y0)
+    rect.y1 = int(rect.y1)
+    if mode == 1:
+        # Пикселизация: вырезаем, уменьшаем (теряя детализацию), обратно увеличиваем и вставляем на место
+        crop_img = img.crop(rect)
+        img_small = crop_img.resize((crop_img.size[0] // pixelator, crop_img.size[1] // pixelator))
+        blur_image = img_small.resize(crop_img.size, PILImage.NEAREST)
+        img.paste(blur_image, rect)
+    else:
+        # Заливка белым
+        draw = ImageDraw.Draw(img)
+        draw.rectangle(rect, fill=(255, 255, 255, 0))

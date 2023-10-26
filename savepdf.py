@@ -4,8 +4,8 @@
 """
 
 import io
+import logging
 import os
-import re
 import shutil
 import subprocess
 
@@ -21,6 +21,18 @@ from params import FileFormat
 from params import PageMode
 from params import PageRotation
 from params import SaveParams
+
+
+# Настраиваем логирование
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# настройка обработчика и форматировщика для logger2
+handler = logging.FileHandler('log.log')
+handler.setFormatter(logging.Formatter('%(name)s %(asctime)s %(levelname)s %(message)s'))
+
+# добавление обработчика к логгеру
+logger.addHandler(handler)
 
 
 def check_new_file(wnd, outfile, ext, ind, overwrite_all):
@@ -57,34 +69,8 @@ def saveas_process(wnd, p: SaveParams, censore: bool):  # noqa: ignore=C901
     else:
         wnd.title = 'Сохранить как'
 
-    if p.pgmode == PageMode.PG_ALL:
-        pageranges = [range(0, wnd.pdf_view.page_count)]
-        approx_pgcount = wnd.pdf_view.page_count
-    elif p.pgmode == PageMode.PG_CURRENT:
-        pageranges = [range(wnd.pdf_view.current_page, wnd.pdf_view.current_page + 1)]
-        approx_pgcount = 1
-    else:
-        approx_pgcount = 0
-        pageranges = []
-        for grp in re.findall('([0-9-]+),', p.pgrange + ','):
-            subgrp = re.findall(r'(\d*)-*', grp)
-            r_start = 0
-            if not grp.startswith('-'):
-                r_start = max(r_start, int(subgrp[0]))
-            r_end = wnd.pdf_view.page_count + 1
-            if not grp.endswith('-'):
-                r_end = min(r_end, int(subgrp[-2]))
-            if r_start > r_end:
-                # r_start, r_end = r_end, r_start
-                if r_end <= wnd.pdf_view.page_count and r_start > 0:
-                    pageranges.append(range(r_start - 1, r_end - 2, -1))
-                    approx_pgcount += r_start - r_end + 1  # Примерное количество из-за границ
-            else:
-                if r_start <= wnd.pdf_view.page_count and r_end > 0:
-                    pageranges.append(range(r_start - 1, r_end))
-                    approx_pgcount += r_end - r_start + 1  # Примерное количество из-за границ
-            # print(r_start, r_end)
-        # print(pageranges)
+        pageranges, approx_pgcount = p.get_pages_ranges(wnd.pdf_view)
+
         if not pageranges:
             QMessageBox.critical(wnd, wnd.title, "Не задан список страниц!")
             return
@@ -377,6 +363,7 @@ def saveas_process(wnd, p: SaveParams, censore: bool):  # noqa: ignore=C901
                                         if show_save_error_msg(wnd, e) == QMessageBox.StandardButton.Cancel:
                                             raise
                     except Exception:
+                        logger.error('', exc_info=True)
                         # Вертаем поворот страницы взад
                         if p.rotation != PageRotation.RT_NONE:
                             doc[pno].set_rotation(old_rot)

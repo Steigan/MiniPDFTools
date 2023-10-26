@@ -5,6 +5,7 @@
 import configparser
 import enum
 import os
+import re
 
 from PySide2.QtCore import QSettings
 
@@ -96,6 +97,47 @@ class SaveParams:  # pylint: disable=too-many-instance-attributes
     def value_to_bool(value) -> bool:
         """Вспомогательная функция перевода значения из реестра в bool"""
         return value.lower() == 'true' if isinstance(value, str) else bool(value)
+
+    def get_pages_ranges(self, pdf_view):
+        """Формирование списка объектов range c указанными в настройках диапазонами страниц
+
+        Возвращает: список объектов range и количество страниц к обработке
+        """
+
+        if self.pgmode == PageMode.PG_ALL:  # Все страницы
+            pageranges = [range(0, pdf_view.page_count)]
+            approx_pgcount = pdf_view.page_count
+
+        elif self.pgmode == PageMode.PG_CURRENT:  # Текущая страница
+            pageranges = [range(pdf_view.current_page, pdf_view.current_page + 1)]
+            approx_pgcount = 1
+
+        else:  # Разные диапазоны
+            approx_pgcount = 0
+            pageranges = []
+            # Разбираем по запятым на непустые группы
+            for grp in re.findall('([0-9-]+),', self.pgrange + ','):
+                # Разбираем на числовые подгруппы
+                subgrp = re.findall(r'(\d*)-*', grp)
+                r_start = 0
+                if not grp.startswith('-'):
+                    # Если группа начинается с числа
+                    r_start = max(r_start, int(subgrp[0]))
+                r_end = pdf_view.page_count + 1
+                if not grp.endswith('-'):
+                    r_end = min(r_end, int(subgrp[-2]))
+                if r_start > r_end:
+                    # r_start, r_end = r_end, r_start
+                    if r_end <= pdf_view.page_count and r_start > 0:
+                        pageranges.append(range(r_start - 1, r_end - 2, -1))
+                        approx_pgcount += r_start - r_end + 1  # Примерное количество из-за границ
+                else:
+                    if r_start <= pdf_view.page_count and r_end > 0:
+                        pageranges.append(range(r_start - 1, r_end))
+                        approx_pgcount += r_end - r_start + 1  # Примерное количество из-за границ
+                # print(r_start, r_end)
+            # print(pageranges)
+        return pageranges, approx_pgcount
 
 
 def get_lastfilename() -> str:
