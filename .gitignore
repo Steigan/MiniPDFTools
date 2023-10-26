@@ -141,4 +141,3 @@ venv.bak/
 setup.cfg
 pyproject.toml
 .idea/
-dotableanalize.py
