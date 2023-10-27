@@ -132,12 +132,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         # Дежурный объект для вывода сообщений
         self.ui.msg_box = QMessageBox(self)
 
-        # Имя текущего файла
-        self._current_filename = ''
-        # Это настоящий файл (иначе - виртуальный, новый)
-        self._is_real_file = False
         # Заголовок для дежурного объекта для вывода сообщений
-        self._title = ''
+        self.title = ''
 
     def _setup_popup_menu(self) -> QMenu:
         """Создание контекстного меню"""
@@ -272,25 +268,21 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         if doc_location == '' or doc_location.isLocalFile():
             if doc_location:
-                self._is_real_file = True
-                self._current_filename = doc_location.toLocalFile()
-                self.pdf_view.open(self._current_filename)
+                self.pdf_view.open(doc_location.toLocalFile())
                 is_file_opened = self.pdf_view.page_count > 0
             elif files_list is not None:
-                self._is_real_file = False
-                self._current_filename = '*** Результат объединения файлов ***'
                 self.pdf_view.combine(files_list)
                 is_file_opened = self.pdf_view.page_count > 0
             else:
                 is_file_opened = False
 
             if is_file_opened:
-                self.setWindowTitle(const.APP_TITLE + ' - ' + self._current_filename)
+                self.setWindowTitle(const.APP_TITLE + ' - ' + self.pdf_view.current_filename)
                 self.ui.page_selector.setRange(1, self.pdf_view.page_count)
                 self.ui.page_selector.setSuffix(f' из {self.pdf_view.page_count}')
                 self._change_page(1)
-                if self._is_real_file:
-                    params.set_lastfilename(self._current_filename)
+                if self.pdf_view.is_real_file:
+                    params.set_lastfilename(self.pdf_view.current_filename)
             else:
                 self.setWindowTitle(const.APP_TITLE)
                 self.ui.page_selector.setRange(0, 1)
@@ -348,17 +340,93 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             # noinspection PyTypeChecker
             self.open_or_combine_files('', dlg.get_filelist())
 
-    def _censore_selections_process(self, p: params.SaveParams):
-        """Выделение областей с персональными данными"""
+    def _save_files_process(self, p: params.SaveParams, censore: bool):
+        """Сохранение файла/файлов с деперсонификацией данных или без"""
 
-        self._title = 'Выделение областей с персональными данными'
+        if censore:
+            self.title = 'Сохранение файла/файлов с деперсонификацией данных'
+        else:
+            self.title = 'Сохранение файла/файлов'
 
         # Получаем список объектов range с номерами страниц
         page_ranges, ranges_page_count = p.get_pages_ranges(self.pdf_view.current_page, self.pdf_view.page_count)
 
         # Если ничего нет...
         if not ranges_page_count:
-            QMessageBox.critical(self, self._title, 'Не задан список страниц!')
+            QMessageBox.critical(self, self.title, 'Не задан список страниц!')
+            return
+
+        # Если сохраняем в графический формат, либо стоит галка "разбивать по страницам",
+        # то нужно разбивать по отдельным файлам
+        if p.format in (params.FileFormat.FMT_JPEG, params.FileFormat.FMT_PNG) or p.singles:
+            # Определяем расширение файлов
+            ext_tp = [".pdf", ".jpg", ".png"][max(p.format.value - 1, 0)]
+            # Получаем от пользователя имя "тушки" новых файлов
+            outfile = self._get_savefilename(
+                os.path.dirname(self.pdf_view.current_filename),
+                r'Серия файлов {имя}' + f'-XXXX{ext_tp} (*{ext_tp})',
+                ext_tp,
+                False,
+            )
+        else:
+            # Определяем расширение файлов
+            ext_tp = '.pdf'
+            # Получаем от пользователя имя нового файла
+            outfile = self._get_savefilename(
+                os.path.dirname(self.pdf_view.current_filename), r'Файл PDF (*.pdf)', ext_tp, True
+            )
+
+            # Проверяем имя файла на совпадение с исходным
+            if outfile == self.pdf_view.current_filename:
+                QMessageBox.critical(self, self.title, 'Нельзя сохранять файл в самого себя!')
+                return
+
+        # Имя файла не выбрано
+        if not outfile:
+            return
+
+        # Включаем прогресс-бар и блокируем интерфейс
+        self._progress_status_start(self.title + '...')
+
+        # Запускаем основную функцию сохранения файла
+        try:
+            res = saveas_process(
+                self,
+                pdf_view=self.pdf_view,
+                page_ranges=page_ranges,
+                ranges_page_count=ranges_page_count,
+                outfile=outfile,
+                ext=ext_tp,
+                p=p,
+                censore=censore,
+                progress_callback=self._progress_status_refresh,
+                overwrite_msg_callback=self._show_file_overwrite_msg,
+            )
+        except Exception as e:
+            self._show_error_message(e)
+            return
+
+        # Выводим финальные сообщения
+        self._progress_status_final(
+            res,
+            success_message='Готово!',
+            command=self._pdfviewer_cmd
+            if p.format in (params.FileFormat.FMT_PDF, params.FileFormat.FMT_PDF_JPEG) and not p.singles
+            else '',
+            arg=outfile,
+        )
+
+    def _censore_selections_process(self, p: params.SaveParams):
+        """Выделение областей с персональными данными"""
+
+        self.title = 'Выделение областей с персональными данными'
+
+        # Получаем список объектов range с номерами страниц
+        page_ranges, ranges_page_count = p.get_pages_ranges(self.pdf_view.current_page, self.pdf_view.page_count)
+
+        # Если ничего нет...
+        if not ranges_page_count:
+            QMessageBox.critical(self, self.title, 'Не задан список страниц!')
             return
 
         # Удаляем дубликаты страниц
@@ -380,7 +448,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
                 self.pdf_view.remove_selection(True)
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self._title + '...')
+        self._progress_status_start(self.title + '...')
 
         # Сохраняем старое количество выделений
         old_count = self.pdf_view.selections_all_count
@@ -399,7 +467,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         # Подсчитываем количество новых выделений
         old_count = self.pdf_view.selections_all_count - old_count
 
-        # Отключаем прогресс-бар и разблокируем интерфейс
+        # Выводим финальные сообщения
         self._progress_status_final(
             old_count > 0,
             success_message=f'Выделено областей с персональными данными: {old_count}',
@@ -409,46 +477,46 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     def _export_pd_process(self, recognize_qr: bool):
         """Экспорт рееста ПД в XLSX"""
 
-        self._title = 'Экспорт рееста ПД в XLSX'
+        self.title = 'Экспорт рееста ПД в XLSX'
 
         # Получаем от пользователя имя нового файла
         outfile = self._get_savefilename(
-            os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
+            os.path.dirname(self.pdf_view.current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
         )
         # Имя файла не выбрано
         if not outfile:
             return
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self._title + '...')
+        self._progress_status_start(self.title + '...')
 
         # Запускаем парсинг таблиц на всех страницах документа
         try:
             res = export_pd(
-                self.pdf_view.doc, outfile, self._current_filename, recognize_qr, self._progress_status_refresh
+                self.pdf_view.doc, outfile, self.pdf_view.current_filename, recognize_qr, self._progress_status_refresh
             )
         except Exception as e:
             self._show_error_message(e)
             return
 
-        # Отключаем прогресс-бар и разблокируем интерфейс
+        # Выводим финальные сообщения
         self._progress_status_final(res, command=self._xlseditor_cmd, arg=outfile)
 
     def _tableanalize_process(self, strong: bool):
         """Анализ и разбор табличных данных на всех страницах файла PDF и сохранение их в файл XLSX"""
 
-        self._title = 'Экспорт табличных данных в XLSX'
+        self.title = 'Экспорт табличных данных в XLSX'
 
         # Получаем от пользователя имя нового файла
         outfile = self._get_savefilename(
-            os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
+            os.path.dirname(self.pdf_view.current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
         )
         # Имя файла не выбрано
         if not outfile:
             return
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self._title + '...')
+        self._progress_status_start(self.title + '...')
 
         # Запускаем парсинг таблиц на всех страницах документа
         try:
@@ -457,7 +525,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             self._show_error_message(e)
             return
 
-        # Отключаем прогресс-бар и разблокируем интерфейс
+        # Выводим финальные сообщения
         self._progress_status_final(
             rows_count > 0,
             command=self._xlseditor_cmd,
@@ -467,7 +535,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
     def _get_savefilename(self, file_dir: str, file_filter: str, file_ext: str, file_delete: bool = False) -> str:
         """Диалог выбора имени файла для сохранения"""
-        outfile, _ = QFileDialog.getSaveFileName(self, self._title, file_dir, file_filter)
+        if file_delete:
+            outfile, _ = QFileDialog.getSaveFileName(self, self.title, file_dir, file_filter)
+        else:
+            outfile, _ = QFileDialog.getSaveFileName(
+                self, self.title, file_dir, file_filter, options=QFileDialog.Option.DontConfirmOverwrite
+            )
         # Имя файла не выбрано
         if not outfile:
             return ''
@@ -523,22 +596,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             if command:
                 subprocess.Popen((command, arg))  # pylint: disable=consider-using-with
             if success_message:
-                QMessageBox.information(self, self._title, success_message)
+                QMessageBox.information(self, self.title, success_message)
         else:
             if fault_message:
-                QMessageBox.warning(self, self._title, fault_message)
+                QMessageBox.warning(self, self.title, fault_message)
             self.statusBar().showMessage('')
 
     def _show_error_message(self, e: BaseException):
         """Вывод сообщения об ошибке"""
         logger.error('', exc_info=True)
-        QMessageBox.critical(self, self._title, f"Ошибка: {e}")
+        QMessageBox.critical(self, self.title, f"Ошибка: {e}")
 
     def _show_yes_no_cancel_message(self, text: str) -> QMessageBox.StandardButton:
         """Вывод сообщения с тремя вариантами ответа Да-Нет-Отмена"""
 
         self.ui.msg_box.setIcon(QMessageBox.Icon.Question)
-        self.ui.msg_box.setWindowTitle(self._title)
+        self.ui.msg_box.setWindowTitle(self.title)
         self.ui.msg_box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
         )
@@ -550,6 +623,44 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Возвращаем результат вывода сообщения с тремя вариантами ответа Да-Нет-Отмена
         return self.ui.msg_box.exec()
+
+    def _show_file_overwrite_msg(self, fulename: str) -> QMessageBox.StandardButton:
+        """Вывод сообщения о перезаписи файла с четырьмя вариантами ответа Да-Да для всех-Нет-Отмена
+
+        Возвращает: соответствующий вариант QMessageBox.StandardButton
+        """
+        self.ui.msg_box.setIcon(QMessageBox.Icon.Question)
+        self.ui.msg_box.setWindowTitle(self._title)
+        self.ui.msg_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.YesToAll
+            | QMessageBox.StandardButton.No
+            | QMessageBox.StandardButton.Cancel
+        )
+        self.ui.msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+        self.ui.msg_box.button(QMessageBox.StandardButton.Yes).setText('  Да  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.YesToAll).setText('  Да для всех  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.No).setText('  Нет  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
+
+        self.ui.msg_box.setText(f'Файл \'{fulename}\' уже существует. Перезаписать поверх?')
+        return self.ui.msg_box.exec()
+
+    def show_save_error_msg(self, e: BaseException) -> bool:
+        """Вывод сообщения при ошибке сохранения одного файла из серии
+
+        Возвращает True, если пользователь решил продолжать, False - прекратить
+        (???может добавить третий вариант - повторить попытку???)
+        """
+        m_msg_box = QMessageBox(self)
+        m_msg_box.setIcon(QMessageBox.Icon.Warning)
+        m_msg_box.setWindowTitle(self.title)
+        m_msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        m_msg_box.button(QMessageBox.StandardButton.Ok).setText('  ОК  ')
+        m_msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
+        m_msg_box.setDefaultButton(QMessageBox.StandardButton.Ok)
+        m_msg_box.setText(f'Ошибка: {e}\n\nПродолжить процесс сохранения остальных файлов?')
+        return m_msg_box.exec() == QMessageBox.StandardButton.Yes
 
     ###########################################################################
     # Обработчики событий
@@ -623,7 +734,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         """Обработчик выбора пункта меню <Сохранить как...>"""
         dlg = SaveAsDialog(self)
         if dlg.exec_():
-            saveas_process(self, dlg.params, False)
+            self._save_files_process(dlg.params, False)
             self._progress_status_turnoff()
 
     @Slot()
@@ -639,7 +750,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             if dlg.params.setselectionsonly:
                 self._censore_selections_process(dlg.params)
             else:
-                saveas_process(self, dlg.params, True)
+                self._save_files_process(dlg.params, True)
 
             self._progress_status_turnoff()
 

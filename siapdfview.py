@@ -465,6 +465,8 @@ class SiaPdfView(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._doc = None
+        self._current_filename = ''  # Имя текущего файла
+        self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
         self._current_page = -1
         self._psw = ''
         self._scale_factor = 1.0
@@ -532,6 +534,9 @@ class SiaPdfView(QScrollArea):
         skip_all = False
 
         self.close()
+        self._current_filename = ''  # Имя текущего файла
+        self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
+
         self._doc = fitz.Document()
         for filename in filelist:
             try:
@@ -561,6 +566,7 @@ class SiaPdfView(QScrollArea):
             doc.close()
 
         if len(self._doc):
+            self._current_filename = '*** Результат объединения файлов ***'  # Имя текущего файла
             self._scale_factor = 1.0
             self._show_page(0)
             self._container.setVisible(True)
@@ -570,6 +576,8 @@ class SiaPdfView(QScrollArea):
 
     def open(self, filename: str):
         self.close()
+        self._current_filename = ''  # Имя текущего файла
+        self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
         try:
             self._doc = fitz.Document(filename)
             if not self._doc.is_pdf:
@@ -583,6 +591,9 @@ class SiaPdfView(QScrollArea):
             if self._doc.is_encrypted:
                 self.close()
                 return
+
+            self._current_filename = filename  # Имя текущего файла
+            self._is_real_file = True  # Это настоящий файл (или виртуальный/новый)
             self._scale_factor = 1.0
             self._show_page(0)
             self._container.setVisible(True)
@@ -617,6 +628,8 @@ class SiaPdfView(QScrollArea):
         if self._doc is not None:
             self._doc.close()
             self._doc = None
+            self._current_filename = ''  # Имя текущего файла
+            self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
             self._current_page = -1
             self._container.setVisible(False)
             self._container.setFixedSize(50, 50)
@@ -629,6 +642,14 @@ class SiaPdfView(QScrollArea):
     @property
     def doc(self):
         return self._doc
+
+    @property
+    def current_filename(self):
+        return self._current_filename
+
+    @property
+    def is_real_file(self):
+        return self._is_real_file
 
     @property
     def current_page(self):
