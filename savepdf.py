@@ -43,11 +43,10 @@ def check_new_file(wnd, outfile, ext, ind, overwrite_all):
     if not overwrite_all and os.path.exists(fn):
         wnd.ui.msg_box.setText(f'Файл \'{fn}\' уже существует. Перезаписать поверх?')
         res = wnd.ui.msg_box.exec()
-        if (res == QMessageBox.StandardButton.No) or (res == QMessageBox.StandardButton.Cancel):
+        if res in (QMessageBox.StandardButton.No, res == QMessageBox.StandardButton.Cancel):
             fn = ''
         return fn, (res == QMessageBox.StandardButton.YesToAll), (res == QMessageBox.StandardButton.Cancel)
-    else:
-        return fn, overwrite_all, False
+    return fn, overwrite_all, False
 
 
 def show_save_error_msg(wnd, e):
@@ -69,46 +68,10 @@ def saveas_process(wnd, p: SaveParams, censore: bool):  # noqa: ignore=C901
     else:
         wnd.title = 'Сохранить как'
 
-        pageranges, approx_pgcount = p.get_pages_ranges(wnd.pdf_view)
+    page_ranges, ranges_page_count = p.get_pages_ranges(wnd.pdf_view.current_page, wnd.pdf_view.page_count)
 
-        if not pageranges:
-            QMessageBox.critical(wnd, wnd.title, "Не задан список страниц!")
-            return
-
-    if p.setselectionsonly:
-        if wnd.pdf_view.selections_all_count > 0:
-            wnd.ui.msg_box.setIcon(QMessageBox.Icon.Question)
-            wnd.ui.msg_box.setWindowTitle(wnd.title)
-            wnd.ui.msg_box.setStandardButtons(
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
-            )
-            wnd.ui.msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
-            wnd.ui.msg_box.button(QMessageBox.StandardButton.Yes).setText('  Да  ')
-            wnd.ui.msg_box.button(QMessageBox.StandardButton.No).setText('  Нет  ')
-            wnd.ui.msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
-            wnd.ui.msg_box.setText('Документ уже содержит выделенные области. Очистить их?')
-            res = wnd.ui.msg_box.exec()
-            if res == QMessageBox.StandardButton.Cancel:
-                return
-            elif res == QMessageBox.StandardButton.Yes:
-                wnd.pdf_view.remove_selection(True)
-
-        wnd.statusBar().showMessage('Поиск и выделение персональных данных...')
-        wnd.ui.progress_bar.setValue(0)
-        wnd.ui.progress_bar.setVisible(True)
-        wnd.setDisabled(True)
-        QApplication.processEvents()
-        ind = 0
-        doc = wnd.pdf_view.doc
-        for pages in pageranges:
-            for pno in pages:
-                if 0 <= pno < doc.page_count:
-                    censore_page(doc=doc, pno=pno, param=p, add_selection_callback=wnd.pdf_view.add_selection)
-                    ind += 1
-                    wnd.ui.progress_bar.setValue(ind * 100 // approx_pgcount)
-                    QApplication.processEvents()
-
-        wnd.process_rect_selection(wnd.pdf_view.selected_rect > -1)
+    if not ranges_page_count:
+        QMessageBox.critical(wnd, wnd.title, "Не задан список страниц!")
         return
 
     # outfile, _ = os.path.splitext(wnd.m_currentFileName)
@@ -206,11 +169,11 @@ def saveas_process(wnd, p: SaveParams, censore: bool):  # noqa: ignore=C901
         doc = fitz.open(outfile)
         if doc.needs_pass:
             doc.authenticate(wnd.pdf_view.psw)
-        for pno in range(approx_pgcount):
+        for pno in range(ranges_page_count):
             # if p.rotation != PageRotation.rtNone:
             # Пытаемся повернуть страницу в соответствии с отображаемым на экране объектом
             doc[pno].set_rotation((wnd.pdf_view.doc[pno].rotation + (0, 270, 90, 180)[p.rotation.value]) % 360)
-            wnd.ui.progress_bar.setValue(pno * 95 // approx_pgcount)
+            wnd.ui.progress_bar.setValue(pno * 95 // ranges_page_count)
             QApplication.processEvents()
         try:
             doc.save(
@@ -225,12 +188,12 @@ def saveas_process(wnd, p: SaveParams, censore: bool):  # noqa: ignore=C901
     else:
         pixelator = p.dpi // 20
         overwrite_all = False
-        for pages in pageranges:
+        for pages in page_ranges:
             for pno in pages:
                 if 0 <= pno < doc.page_count:
                     ind += 1
 
-                    wnd.ui.progress_bar.setValue(ind * 100 // approx_pgcount)
+                    wnd.ui.progress_bar.setValue(ind * 100 // ranges_page_count)
                     QApplication.processEvents()
 
                     old_rot = doc[pno].rotation

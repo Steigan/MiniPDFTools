@@ -25,6 +25,7 @@ from PySide2.QtWidgets import QProgressBar
 import const
 import params
 from censoredlg import CensoreDialog
+from censorepd import censore_page
 from combinedlg import CombineDialog
 from exportpd import export_pd
 from mainwindow_ui import Ui_MainWindow
@@ -132,11 +133,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         self.ui.msg_box = QMessageBox(self)
 
         # Имя текущего файла
-        self.current_filename = ''
+        self._current_filename = ''
         # Это настоящий файл (иначе - виртуальный, новый)
-        self.is_real_file = False
+        self._is_real_file = False
         # Заголовок для дежурного объекта для вывода сообщений
-        self.title = ''
+        self._title = ''
 
     def _setup_popup_menu(self) -> QMenu:
         """Создание контекстного меню"""
@@ -271,25 +272,25 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         if doc_location == '' or doc_location.isLocalFile():
             if doc_location:
-                self.is_real_file = True
-                self.current_filename = doc_location.toLocalFile()
-                self.pdf_view.open(self.current_filename)
+                self._is_real_file = True
+                self._current_filename = doc_location.toLocalFile()
+                self.pdf_view.open(self._current_filename)
                 is_file_opened = self.pdf_view.page_count > 0
             elif files_list is not None:
-                self.is_real_file = False
-                self.current_filename = '*** Результат объединения файлов ***'
+                self._is_real_file = False
+                self._current_filename = '*** Результат объединения файлов ***'
                 self.pdf_view.combine(files_list)
                 is_file_opened = self.pdf_view.page_count > 0
             else:
                 is_file_opened = False
 
             if is_file_opened:
-                self.setWindowTitle(const.APP_TITLE + ' - ' + self.current_filename)
+                self.setWindowTitle(const.APP_TITLE + ' - ' + self._current_filename)
                 self.ui.page_selector.setRange(1, self.pdf_view.page_count)
                 self.ui.page_selector.setSuffix(f' из {self.pdf_view.page_count}')
                 self._change_page(1)
-                if self.is_real_file:
-                    params.set_lastfilename(self.current_filename)
+                if self._is_real_file:
+                    params.set_lastfilename(self._current_filename)
             else:
                 self.setWindowTitle(const.APP_TITLE)
                 self.ui.page_selector.setRange(0, 1)
@@ -347,26 +348,84 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             # noinspection PyTypeChecker
             self.open_or_combine_files('', dlg.get_filelist())
 
+    def _censore_selections_process(self, p: params.SaveParams):
+        """Выделение областей с персональными данными"""
+
+        self._title = 'Выделение областей с персональными данными'
+
+        # Получаем список объектов range с номерами страниц
+        page_ranges, ranges_page_count = p.get_pages_ranges(self.pdf_view.current_page, self.pdf_view.page_count)
+
+        # Если ничего нет...
+        if not ranges_page_count:
+            QMessageBox.critical(self, self._title, 'Не задан список страниц!')
+            return
+
+        # Удаляем дубликаты страниц
+        pages_set = set()
+        for page_range in page_ranges:
+            pages_set.update(page_range)
+
+        # Подсчитываем количество страниц
+        ranges_page_count = len(pages_set)
+
+        # Если выделенные участки уже есть, то предложим их сбросить
+        if self.pdf_view.selections_all_count > 0:
+            # Выводим сообщение с тремя вариантами ответа Да-Нет-Отмена
+            res = self._show_yes_no_cancel_message('Документ уже содержит выделенные области. Очистить их?')
+            if res == QMessageBox.StandardButton.Cancel:
+                return
+            if res == QMessageBox.StandardButton.Yes:
+                # Сбрасываем все выделенные области
+                self.pdf_view.remove_selection(True)
+
+        # Включаем прогресс-бар и блокируем интерфейс
+        self._progress_status_start(self._title + '...')
+
+        # Сохраняем старое количество выделений
+        old_count = self.pdf_view.selections_all_count
+
+        ind = 0
+        # Обходим указанные пользователем страницы
+        for pno in pages_set:
+            # Запускаем обработку страницы
+            censore_page(doc=self.pdf_view.doc, pno=pno, param=p, add_selection_callback=self.pdf_view.add_selection)
+            ind += 1
+            self._progress_status_refresh(ind * 100 // ranges_page_count)
+
+        # Обновляем доступность элементов
+        self.process_rect_selection(self.pdf_view.selected_rect > -1)
+
+        # Подсчитываем количество новых выделений
+        old_count = self.pdf_view.selections_all_count - old_count
+
+        # Отключаем прогресс-бар и разблокируем интерфейс
+        self._progress_status_final(
+            old_count > 0,
+            success_message=f'Выделено областей с персональными данными: {old_count}',
+            fault_message='Области с персональными данными не найдены...',
+        )
+
     def _export_pd_process(self, recognize_qr: bool):
         """Экспорт рееста ПД в XLSX"""
 
-        self.title = 'Экспорт рееста ПД в XLSX'
+        self._title = 'Экспорт рееста ПД в XLSX'
 
         # Получаем от пользователя имя нового файла
         outfile = self._get_savefilename(
-            os.path.dirname(self.current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
+            os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
         )
         # Имя файла не выбрано
         if not outfile:
             return
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self.title + '...')
+        self._progress_status_start(self._title + '...')
 
         # Запускаем парсинг таблиц на всех страницах документа
         try:
             res = export_pd(
-                self.pdf_view.doc, outfile, self.current_filename, recognize_qr, self._progress_status_refresh
+                self.pdf_view.doc, outfile, self._current_filename, recognize_qr, self._progress_status_refresh
             )
         except Exception as e:
             self._show_error_message(e)
@@ -378,18 +437,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     def _tableanalize_process(self, strong: bool):
         """Анализ и разбор табличных данных на всех страницах файла PDF и сохранение их в файл XLSX"""
 
-        self.title = 'Экспорт табличных данных в XLSX'
+        self._title = 'Экспорт табличных данных в XLSX'
 
         # Получаем от пользователя имя нового файла
         outfile = self._get_savefilename(
-            os.path.dirname(self.current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
+            os.path.dirname(self._current_filename), r'Книга Excel "(*.xlsx)"', '.xlsx', True
         )
         # Имя файла не выбрано
         if not outfile:
             return
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self.title + '...')
+        self._progress_status_start(self._title + '...')
 
         # Запускаем парсинг таблиц на всех страницах документа
         try:
@@ -408,7 +467,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
     def _get_savefilename(self, file_dir: str, file_filter: str, file_ext: str, file_delete: bool = False) -> str:
         """Диалог выбора имени файла для сохранения"""
-        outfile, _ = QFileDialog.getSaveFileName(self, self.title, file_dir, file_filter)
+        outfile, _ = QFileDialog.getSaveFileName(self, self._title, file_dir, file_filter)
         # Имя файла не выбрано
         if not outfile:
             return ''
@@ -464,16 +523,33 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             if command:
                 subprocess.Popen((command, arg))  # pylint: disable=consider-using-with
             if success_message:
-                QMessageBox.information(self, self.title, success_message)
+                QMessageBox.information(self, self._title, success_message)
         else:
             if fault_message:
-                QMessageBox.warning(self, self.title, fault_message)
+                QMessageBox.warning(self, self._title, fault_message)
             self.statusBar().showMessage('')
 
     def _show_error_message(self, e: BaseException):
         """Вывод сообщения об ошибке"""
         logger.error('', exc_info=True)
-        QMessageBox.critical(self, self.title, f"Ошибка: {e}")
+        QMessageBox.critical(self, self._title, f"Ошибка: {e}")
+
+    def _show_yes_no_cancel_message(self, text: str) -> QMessageBox.StandardButton:
+        """Вывод сообщения с тремя вариантами ответа Да-Нет-Отмена"""
+
+        self.ui.msg_box.setIcon(QMessageBox.Icon.Question)
+        self.ui.msg_box.setWindowTitle(self._title)
+        self.ui.msg_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
+        )
+        self.ui.msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
+        self.ui.msg_box.button(QMessageBox.StandardButton.Yes).setText('  Да  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.No).setText('  Нет  ')
+        self.ui.msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
+        self.ui.msg_box.setText(text)
+
+        # Возвращаем результат вывода сообщения с тремя вариантами ответа Да-Нет-Отмена
+        return self.ui.msg_box.exec()
 
     ###########################################################################
     # Обработчики событий
@@ -544,6 +620,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
     @Slot()
     def on_actionSaveAs_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Сохранить как...>"""
         dlg = SaveAsDialog(self)
         if dlg.exec_():
             saveas_process(self, dlg.params, False)
@@ -551,13 +628,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
     @Slot()
     def on_actionCensore_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Деперсонификация платежных документов КТК>"""
         dlg = CensoreDialog(self)
         if dlg.exec_():
             # Отключаем режим small_glyph_heights, т.к. с ним некорректно определяется положение "КУДА" и "ОТ КОГО"
             fitz.Tools().set_small_glyph_heights(False)
 
             dlg.params.format = dlg.params.format_censore
-            saveas_process(self, dlg.params, True)
+
+            if dlg.params.setselectionsonly:
+                self._censore_selections_process(dlg.params)
+            else:
+                saveas_process(self, dlg.params, True)
+
             self._progress_status_turnoff()
 
             # Для наилучшего распознания текстового слоя...
@@ -565,20 +648,28 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
     @Slot()
     def on_actionTablesAnalizeStrong_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Поиск таблиц (по рамкам) и экспорт данных
+        в XLSX - С учетом структуры найденных таблиц>
+        """
         self._tableanalize_process(True)
         self._progress_status_turnoff()
 
     @Slot()
     def on_actionTablesAnalizeSimple_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Поиск таблиц (по рамкам) и экспорт данных
+        в XLSX - Простая шинковка на строки и столбцы>
+        """
         self._tableanalize_process(False)
         self._progress_status_turnoff()
 
     @Slot()
     def on_actionPDexport_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Экспорт реестра платежных документов КТК в XLSX без анализа QR кодов>"""
         self._export_pd_process(False)
         self._progress_status_turnoff()
 
     @Slot()
     def on_actionPDexportQR_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Экспорт реестра платежных документов КТК в XLSX с анализом QR кодов>"""
         self._export_pd_process(True)
         self._progress_status_turnoff()
