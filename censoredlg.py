@@ -13,7 +13,6 @@ from censore_ui import Ui_CensoreDialog
 from params import CensoreMode
 from params import FileFormat
 from params import PageMode
-from params import PageRotation
 from params import SaveParams
 
 
@@ -64,9 +63,6 @@ class CensoreDialog(QDialog):
         self.ui.edtPages.setValidator(QRegularExpressionValidator(QRegularExpression('[0-9,-]*')))
         # -- чекбокс "сохранять страницы в отдельные файлы"
         self.ui.chkSingles.setChecked(self._current_params.singles)
-
-        # -- вращение страниц
-        self._rotation_checked(self._current_params.rotation)
 
         # -- DPI и качество создаваемых файлов в графических форматах
         self.ui.cmbDPI.setCurrentText(str(self._current_params.dpi))
@@ -141,17 +137,6 @@ class CensoreDialog(QDialog):
             self._current_params.format_censore == FileFormat.FMT_PDF_JPEG and m_pgmode != PageMode.PG_CURRENT
         )
 
-    def _rotation_checked(self, m_rotation: PageRotation):
-        """Обработка выбора вращения страниц"""
-        # Синхронизируем соответствующий параметр
-        self._current_params.rotation = m_rotation
-
-        # Переключаем состояние Checked кнопок с иконками вращения
-        self.ui.btnOriginal.setChecked(m_rotation == PageRotation.RT_NONE)
-        self.ui.btnLeft.setChecked(m_rotation == PageRotation.RT_LEFT)
-        self.ui.btnRight.setChecked(m_rotation == PageRotation.RT_RIGHT)
-        self.ui.btn180dg.setChecked(m_rotation == PageRotation.RT_180)
-
     def _select_areas(self):
         """Обработка нажатия кнопки <Только выделить области> (<OK>)"""
 
@@ -201,22 +186,6 @@ class CensoreDialog(QDialog):
     @Slot()
     def on_rbtPgRange_clicked(self):  # pylint: disable=invalid-name
         self._pagemode_checked(PageMode.PG_RANGE)
-
-    @Slot()
-    def on_btnOriginal_clicked(self):  # pylint: disable=invalid-name
-        self._rotation_checked(PageRotation.RT_NONE)
-
-    @Slot()
-    def on_btnLeft_clicked(self):  # pylint: disable=invalid-name
-        self._rotation_checked(PageRotation.RT_LEFT)
-
-    @Slot()
-    def on_btnRight_clicked(self):  # pylint: disable=invalid-name
-        self._rotation_checked(PageRotation.RT_RIGHT)
-
-    @Slot()
-    def on_btn180dg_clicked(self):  # pylint: disable=invalid-name
-        self._rotation_checked(PageRotation.RT_180)
 
     @Slot(int)
     def on_cmbCensore_currentIndexChanged(self, newvalue: int):  # pylint: disable=invalid-name

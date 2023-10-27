@@ -18,7 +18,7 @@ class Ui_CensoreDialog(object):
     def setupUi(self, CensoreDialog):
         if not CensoreDialog.objectName():
             CensoreDialog.setObjectName(u"CensoreDialog")
-        CensoreDialog.resize(620, 457)
+        CensoreDialog.resize(620, 401)
         icon = QIcon()
         icon.addFile(u":/icons/images/Paomedia-Small-N-Flat-Floppy.svg", QSize(), QIcon.Normal, QIcon.Off)
         CensoreDialog.setWindowIcon(icon)
@@ -150,58 +150,6 @@ class Ui_CensoreDialog(object):
 
         self.verticalLayout.addWidget(self.grpPages)
 
-        self.grpRotation = QGroupBox(CensoreDialog)
-        self.grpRotation.setObjectName(u"grpRotation")
-        self.horizontalLayout_4 = QHBoxLayout(self.grpRotation)
-        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
-        self.btnOriginal = QPushButton(self.grpRotation)
-        self.btnOriginal.setObjectName(u"btnOriginal")
-        icon1 = QIcon()
-        icon1.addFile(u":/icons/images/Pictogrammers-Material-File-File-outline.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon1.addFile(u":/icons/images/Pictogrammers-Material-File-File-outline_on.svg", QSize(), QIcon.Normal, QIcon.On)
-        self.btnOriginal.setIcon(icon1)
-        self.btnOriginal.setIconSize(QSize(20, 20))
-        self.btnOriginal.setCheckable(True)
-
-        self.horizontalLayout_4.addWidget(self.btnOriginal)
-
-        self.btnLeft = QPushButton(self.grpRotation)
-        self.btnLeft.setObjectName(u"btnLeft")
-        icon2 = QIcon()
-        icon2.addFile(u":/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon2.addFile(u":/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg", QSize(), QIcon.Normal, QIcon.On)
-        self.btnLeft.setIcon(icon2)
-        self.btnLeft.setIconSize(QSize(20, 20))
-        self.btnLeft.setCheckable(True)
-        self.btnLeft.setChecked(True)
-
-        self.horizontalLayout_4.addWidget(self.btnLeft)
-
-        self.btnRight = QPushButton(self.grpRotation)
-        self.btnRight.setObjectName(u"btnRight")
-        icon3 = QIcon()
-        icon3.addFile(u":/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon3.addFile(u":/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg", QSize(), QIcon.Normal, QIcon.On)
-        self.btnRight.setIcon(icon3)
-        self.btnRight.setIconSize(QSize(20, 20))
-        self.btnRight.setCheckable(True)
-
-        self.horizontalLayout_4.addWidget(self.btnRight)
-
-        self.btn180dg = QPushButton(self.grpRotation)
-        self.btn180dg.setObjectName(u"btn180dg")
-        icon4 = QIcon()
-        icon4.addFile(u":/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon4.addFile(u":/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg", QSize(), QIcon.Normal, QIcon.On)
-        self.btn180dg.setIcon(icon4)
-        self.btn180dg.setIconSize(QSize(20, 20))
-        self.btn180dg.setCheckable(True)
-
-        self.horizontalLayout_4.addWidget(self.btn180dg)
-
-
-        self.verticalLayout.addWidget(self.grpRotation)
-
         self.grpJPEG = QGroupBox(CensoreDialog)
         self.grpJPEG.setObjectName(u"grpJPEG")
         self.horizontalLayout_3 = QHBoxLayout(self.grpJPEG)
@@ -326,11 +274,6 @@ class Ui_CensoreDialog(object):
         self.rbtPgRange.setText(QCoreApplication.translate("CensoreDialog", u"\u0423\u043a\u0430\u0437\u0430\u043d\u043d\u044b\u0435 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b", None))
         self.lblPg.setText(QCoreApplication.translate("CensoreDialog", u"\u0421\u043f\u0438\u0441\u043e\u043a \u0441\u0442\u0440\u0430\u043d\u0438\u0446 (\u043f\u0440\u0438\u043c\u0435\u0440\u044b: 2-6,8,5,5,5,-10,7-):", None))
         self.chkSingles.setText(QCoreApplication.translate("CensoreDialog", u"\u041a\u0430\u0436\u0434\u0443\u044e \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0443 \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0432 \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u043e\u043c \u0444\u0430\u0439\u043b\u0435 PDF", None))
-        self.grpRotation.setTitle(QCoreApplication.translate("CensoreDialog", u"\u041f\u043e\u0432\u043e\u0440\u043e\u0442 \u0441\u0442\u0440\u0430\u043d\u0438\u0446", None))
-        self.btnOriginal.setText(QCoreApplication.translate("CensoreDialog", u"\u041d\u0435 \u043c\u0435\u043d\u044f\u0442\u044c", None))
-        self.btnLeft.setText(QCoreApplication.translate("CensoreDialog", u"\u041f\u043e\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u0432\u043b\u0435\u0432\u043e", None))
-        self.btnRight.setText(QCoreApplication.translate("CensoreDialog", u"\u041f\u043e\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u0432\u043f\u0440\u0430\u0432\u043e", None))
-        self.btn180dg.setText(QCoreApplication.translate("CensoreDialog", u"\u041f\u0435\u0440\u0435\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u043d\u0430 180\u00b0", None))
         self.grpJPEG.setTitle(QCoreApplication.translate("CensoreDialog", u"\u041f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0433\u0440\u0430\u0444\u0438\u043a\u0438", None))
         self.lblDPI.setText(QCoreApplication.translate("CensoreDialog", u"\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u0438\u0435 DPI:", None))
         self.cmbDPI.setItemText(0, QCoreApplication.translate("CensoreDialog", u"100", None))

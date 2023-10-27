@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>620</width>
-    <height>457</height>
+    <height>401</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -187,102 +187,6 @@
        <widget class="QCheckBox" name="chkSingles">
         <property name="text">
          <string>Каждую страницу сохранить в отдельном файле PDF</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="grpRotation">
-     <property name="title">
-      <string>Поворот страниц</string>
-     </property>
-     <layout class="QHBoxLayout" name="horizontalLayout_4">
-      <item>
-       <widget class="QPushButton" name="btnOriginal">
-        <property name="text">
-         <string>Не менять</string>
-        </property>
-        <property name="icon">
-         <iconset resource="resources.qrc">
-          <normaloff>:/icons/images/Pictogrammers-Material-File-File-outline.svg</normaloff>
-          <normalon>:/icons/images/Pictogrammers-Material-File-File-outline_on.svg</normalon>:/icons/images/Pictogrammers-Material-File-File-outline.svg</iconset>
-        </property>
-        <property name="iconSize">
-         <size>
-          <width>20</width>
-          <height>20</height>
-         </size>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnLeft">
-        <property name="text">
-         <string>Повернуть влево</string>
-        </property>
-        <property name="icon">
-         <iconset resource="resources.qrc">
-          <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold.svg</normaloff>
-          <normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold_on.svg</normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-left-bold.svg</iconset>
-        </property>
-        <property name="iconSize">
-         <size>
-          <width>20</width>
-          <height>20</height>
-         </size>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-        <property name="checked">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnRight">
-        <property name="text">
-         <string>Повернуть вправо</string>
-        </property>
-        <property name="icon">
-         <iconset resource="resources.qrc">
-          <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold.svg</normaloff>
-          <normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold_on.svg</normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-down-right-bold.svg</iconset>
-        </property>
-        <property name="iconSize">
-         <size>
-          <width>20</width>
-          <height>20</height>
-         </size>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btn180dg">
-        <property name="text">
-         <string>Перевернуть на 180°</string>
-        </property>
-        <property name="icon">
-         <iconset resource="resources.qrc">
-          <normaloff>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold.svg</normaloff>
-          <normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold_on.svg</normalon>:/icons/images/Pictogrammers-Material-Arrow-Arrow-u-left-bottom-bold.svg</iconset>
-        </property>
-        <property name="iconSize">
-         <size>
-          <width>20</width>
-          <height>20</height>
-         </size>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
         </property>
        </widget>
       </item>

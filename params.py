@@ -29,13 +29,13 @@ class PageMode(enum.IntEnum):
     PG_RANGE = 2
 
 
-class PageRotation(enum.IntEnum):
-    """Варианты вращения страницы"""
+# class PageRotation(enum.IntEnum):
+#     """Варианты вращения страницы"""
 
-    RT_NONE = 0
-    RT_LEFT = 1
-    RT_RIGHT = 2
-    RT_180 = 3
+#     RT_NONE = 0
+#     RT_LEFT = 1
+#     RT_RIGHT = 2
+#     RT_180 = 3
 
 
 class CensoreMode(enum.IntEnum):
@@ -56,9 +56,6 @@ class SaveParams:  # pylint: disable=too-many-instance-attributes
         self.format = FileFormat(int(settings.value('format', str(FileFormat.FMT_PDF))))
         self.format_censore = FileFormat(int(settings.value('format_censore', str(FileFormat.FMT_PDF_JPEG))))
         self.pgmode = PageMode(int(settings.value('pgmode', str(PageMode.PG_ALL))))
-        # Если нужно восстанавливать старое значение, то поменять местами комментарии в следующих строках
-        # self.rotation = PageRotation(int(settings.value('rotation', str(PageMode.RT_NONE))))
-        self.rotation = PageRotation.RT_NONE
 
         self.pgrange = settings.value('pgrange', '')
         self.dpi = settings.value('dpi', '300')
@@ -80,7 +77,6 @@ class SaveParams:  # pylint: disable=too-many-instance-attributes
         settings.setValue('format', str(self.format.value))
         settings.setValue('format_censore', str(self.format_censore.value))
         settings.setValue('pgmode', str(self.pgmode.value))
-        settings.setValue('rotation', str(self.rotation.value))
 
         settings.setValue('pgrange', self.pgrange)
         settings.setValue('dpi', self.dpi)

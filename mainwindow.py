@@ -39,7 +39,7 @@ from tableanalize import parse_tables
 
 ABOUT_TEXT = """
 Mini PDF Tools - мини набор инструментов для просмотра и обработки файлов PDF.
-Версия от 23.10.2023 (c) 2023 Игорь Степаненков
+Версия от 27.10.2023 (c) 2023 Игорь Степаненков
 
 Используемые пакеты и библиотеки:
 PySide2 (c) 2022 The Qt Company Ltd.
@@ -391,16 +391,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         # Запускаем основную функцию сохранения файла
         try:
             res = saveas_process(
-                self,
                 pdf_view=self.pdf_view,
                 page_ranges=page_ranges,
                 ranges_page_count=ranges_page_count,
                 outfile=outfile,
                 ext=ext_tp,
-                p=p,
+                param=p,
                 censore=censore,
                 progress_callback=self._progress_status_refresh,
                 overwrite_msg_callback=self._show_file_overwrite_msg,
+                show_error_msg_callback=self._show_error_message,
+                show_save_error_msg_callback=self._show_save_error_msg,
             )
         except Exception as e:
             self._show_error_message(e)
@@ -646,7 +647,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         self.ui.msg_box.setText(f'Файл \'{fulename}\' уже существует. Перезаписать поверх?')
         return self.ui.msg_box.exec()
 
-    def show_save_error_msg(self, e: BaseException) -> bool:
+    def _show_save_error_msg(self, e: BaseException) -> bool:
         """Вывод сообщения при ошибке сохранения одного файла из серии
 
         Возвращает True, если пользователь решил продолжать, False - прекратить
