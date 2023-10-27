@@ -1,12 +1,12 @@
-# Copyright (C) 2022 The Qt Company Ltd.
-# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+"""
+Приложение Mini PDF Tools
+"""
 
 import sys
 from argparse import ArgumentParser
 from argparse import RawTextHelpFormatter
 
 from PySide2.QtCore import QCoreApplication
-from PySide2.QtCore import QUrl
 from PySide2.QtWidgets import QApplication
 
 from mainwindow import MainWindow
@@ -24,11 +24,8 @@ if __name__ == "__main__":
     win.show()
     if options.file:
         if len(options.file) == 1:
-            win.open_or_combine_files(QUrl.fromLocalFile(options.file[0]))
+            win.open_or_combine_files(options.file[0])
         else:
             app.processEvents()
             win.show_combine_files_dialog(options.file)
-    # !!! For debugging !!!
-    # win.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\test.pdf'))
-    # win.open(QUrl.fromLocalFile(r'f:\PythonProjects\PdfTools64\source\Платежные документы КТК.pdf'))
     sys.exit(QCoreApplication.exec_())

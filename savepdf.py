@@ -4,7 +4,6 @@
 """
 
 import io
-import logging
 import os
 import shutil
 
@@ -20,18 +19,6 @@ from params import FileFormat
 from params import PageMode
 from params import SaveParams
 from siapdfview import SiaPdfView
-
-
-# Настраиваем логирование
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# настройка обработчика и форматировщика для logger2
-handler = logging.FileHandler('log.log')
-handler.setFormatter(logging.Formatter('%(name)s %(asctime)s %(levelname)s %(message)s'))
-
-# добавление обработчика к логгеру
-logger.addHandler(handler)
 
 
 def _check_new_file(

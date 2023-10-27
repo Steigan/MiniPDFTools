@@ -5,11 +5,9 @@
 import logging
 import os
 import subprocess
-import sys
 
 import fitz
 from PySide2.QtCore import Qt
-from PySide2.QtCore import QUrl
 from PySide2.QtCore import Slot
 from PySide2.QtGui import QCloseEvent
 from PySide2.QtGui import QDragEnterEvent
@@ -133,7 +131,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         self.ui.msg_box = QMessageBox(self)
 
         # Заголовок для дежурного объекта для вывода сообщений
-        self.title = ''
+        self._title = ''
 
     def _setup_popup_menu(self) -> QMenu:
         """Создание контекстного меню"""
@@ -180,7 +178,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         self.ui.zoom_selector.zoom_factor_changed.connect(self.pdf_view.set_zoom_factor)
         self.ui.page_selector.valueChanged.connect(self._change_page)
 
-        # Обработчики выбора пункто меню <Создать> и <Выход>
+        # Обработчики выбора пунктов меню
         self.ui.actionNew.triggered.connect(lambda: self.show_combine_files_dialog([]))
         self.ui.actionQuit.triggered.connect(self.close)
 
@@ -262,63 +260,63 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         if self.pdf_view.current_page > -1:
             self.ui.pop_menu.exec_(self.pdf_view.mapToGlobal(position))
 
-    # TODO: упростить
-    def open_or_combine_files(self, doc_location, files_list=None):
+    def open_or_combine_files(self, files_list=None):
         """Открыть файл или объединить несколько файлов в один и открыть его"""
 
-        if doc_location == '' or doc_location.isLocalFile():
-            if doc_location:
-                self.pdf_view.open(doc_location.toLocalFile())
-                is_file_opened = self.pdf_view.page_count > 0
-            elif files_list is not None:
-                self.pdf_view.combine(files_list)
-                is_file_opened = self.pdf_view.page_count > 0
-            else:
-                is_file_opened = False
+        if not files_list:  # если пусто
+            is_file_opened = False
+        elif isinstance(files_list, str):  # если строка
+            self.pdf_view.open(files_list)
+            is_file_opened = self.pdf_view.page_count > 0
+        elif isinstance(files_list, list):  # если список
+            self.pdf_view.combine(files_list)
+            is_file_opened = self.pdf_view.page_count > 0
 
-            if is_file_opened:
-                self.setWindowTitle(const.APP_TITLE + ' - ' + self.pdf_view.current_filename)
-                self.ui.page_selector.setRange(1, self.pdf_view.page_count)
-                self.ui.page_selector.setSuffix(f' из {self.pdf_view.page_count}')
-                self._change_page(1)
-                if self.pdf_view.is_real_file:
-                    params.set_lastfilename(self.pdf_view.current_filename)
-            else:
-                self.setWindowTitle(const.APP_TITLE)
-                self.ui.page_selector.setRange(0, 1)
-                self.ui.page_selector.setSuffix(' из 0')
-                self.ui.page_selector.setValue(0)
-
-            # Переключаем доступность элементов интерфейса в зависимости от
-            # наличия открытого файла
-            for widget in (
-                self.ui.page_selector,
-                self.ui.zoom_selector,
-                self.ui.actionZoom_In,
-                self.ui.actionZoom_Out,
-                self.ui.actionZoom_Normal,
-                self.ui.actionSaveAs,
-                self.ui.actionClose,
-                self.ui.actionTablesAnalizeStrong,
-                self.ui.actionTablesAnalizeSimple,
-                self.ui.actionPDexport,
-                self.ui.actionPDexportQR,
-                self.ui.actionCensore,
-                self.ui.actionCbdPageImageCopy,
-                self.ui.actionSelectAll,
-                self.ui.actionPageRotateLeft,
-                self.ui.actionPageRotateRight,
-                self.ui.actionPageRotate180,
-                self.ui.actionPagesRotateLeft,
-                self.ui.actionPagesRotateRight,
-                self.ui.actionPagesRotate180,
-            ):
-                widget.setEnabled(is_file_opened)
-            self.ui.actionRemoveAllSelections.setEnabled(False)
+        if is_file_opened:
+            # Файл открыт - меняем заголовок окна, диапазон страниц
+            self.setWindowTitle(const.APP_TITLE + ' - ' + self.pdf_view.current_filename)
+            self.ui.page_selector.setRange(1, self.pdf_view.page_count)
+            self.ui.page_selector.setSuffix(f' из {self.pdf_view.page_count}')
+            # Переходим на первую страницу
+            self._change_page(1)
+            # Запоминаем путь к реальному файлу PDF
+            if self.pdf_view.is_real_file:
+                params.set_lastfilename(self.pdf_view.current_filename)
         else:
-            message = f"{doc_location} не является локальным файлом"
-            print(message, file=sys.stderr)
-            QMessageBox.critical(self, "Открыть не удалось", message)
+            # Файл не открыт - гасим все
+            self.setWindowTitle(const.APP_TITLE)
+            self.ui.page_selector.setRange(0, 1)
+            self.ui.page_selector.setSuffix(' из 0')
+            self.ui.page_selector.setValue(0)
+
+        # Переключаем доступность элементов интерфейса в зависимости от
+        # наличия открытого файла
+        for widget in (
+            self.ui.page_selector,
+            self.ui.zoom_selector,
+            self.ui.actionZoom_In,
+            self.ui.actionZoom_Out,
+            self.ui.actionZoom_Normal,
+            self.ui.actionSaveAs,
+            self.ui.actionClose,
+            self.ui.actionTablesAnalizeStrong,
+            self.ui.actionTablesAnalizeSimple,
+            self.ui.actionPDexport,
+            self.ui.actionPDexportQR,
+            self.ui.actionCensore,
+            self.ui.actionCbdPageImageCopy,
+            self.ui.actionSelectAll,
+            self.ui.actionPageRotateLeft,
+            self.ui.actionPageRotateRight,
+            self.ui.actionPageRotate180,
+            self.ui.actionPagesRotateLeft,
+            self.ui.actionPagesRotateRight,
+            self.ui.actionPagesRotate180,
+        ):
+            widget.setEnabled(is_file_opened)
+
+        # Отключаем доступность пункта меню удаления всех выделений
+        self.ui.actionRemoveAllSelections.setEnabled(False)
 
     def _change_page(self, page):
         """Обработчик события смены номера страницы, полученного от панели инструментов"""
@@ -337,23 +335,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         """Вывод диалога объединения файлов и запуск обработки результата"""
         dlg = CombineDialog(self, filelist)
         if dlg.exec_():
-            # noinspection PyTypeChecker
-            self.open_or_combine_files('', dlg.get_filelist())
+            self.open_or_combine_files(dlg.get_filelist())
 
     def _save_files_process(self, p: params.SaveParams, censore: bool):
         """Сохранение файла/файлов с деперсонификацией данных или без"""
 
         if censore:
-            self.title = 'Сохранение файла/файлов с деперсонификацией данных'
+            self._title = 'Сохранение файла/файлов с деперсонификацией данных'
         else:
-            self.title = 'Сохранение файла/файлов'
+            self._title = 'Сохранение файла/файлов'
 
         # Получаем список объектов range с номерами страниц
         page_ranges, ranges_page_count = p.get_pages_ranges(self.pdf_view.current_page, self.pdf_view.page_count)
 
         # Если ничего нет...
         if not ranges_page_count:
-            QMessageBox.critical(self, self.title, 'Не задан список страниц!')
+            QMessageBox.critical(self, self._title, 'Не задан список страниц!')
             return
 
         # Если сохраняем в графический формат, либо стоит галка "разбивать по страницам",
@@ -378,7 +375,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
             # Проверяем имя файла на совпадение с исходным
             if outfile == self.pdf_view.current_filename:
-                QMessageBox.critical(self, self.title, 'Нельзя сохранять файл в самого себя!')
+                QMessageBox.critical(self, self._title, 'Нельзя сохранять файл в самого себя!')
                 return
 
         # Имя файла не выбрано
@@ -386,7 +383,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             return
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self.title + '...')
+        self._progress_status_start(self._title + '...')
 
         # Запускаем основную функцию сохранения файла
         try:
@@ -420,14 +417,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     def _censore_selections_process(self, p: params.SaveParams):
         """Выделение областей с персональными данными"""
 
-        self.title = 'Выделение областей с персональными данными'
+        self._title = 'Выделение областей с персональными данными'
 
         # Получаем список объектов range с номерами страниц
         page_ranges, ranges_page_count = p.get_pages_ranges(self.pdf_view.current_page, self.pdf_view.page_count)
 
         # Если ничего нет...
         if not ranges_page_count:
-            QMessageBox.critical(self, self.title, 'Не задан список страниц!')
+            QMessageBox.critical(self, self._title, 'Не задан список страниц!')
             return
 
         # Удаляем дубликаты страниц
@@ -449,7 +446,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
                 self.pdf_view.remove_selection(True)
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self.title + '...')
+        self._progress_status_start(self._title + '...')
 
         # Сохраняем старое количество выделений
         old_count = self.pdf_view.selections_all_count
@@ -478,7 +475,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     def _export_pd_process(self, recognize_qr: bool):
         """Экспорт рееста ПД в XLSX"""
 
-        self.title = 'Экспорт рееста ПД в XLSX'
+        self._title = 'Экспорт рееста ПД в XLSX'
 
         # Получаем от пользователя имя нового файла
         outfile = self._get_savefilename(
@@ -489,7 +486,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             return
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self.title + '...')
+        self._progress_status_start(self._title + '...')
 
         # Запускаем парсинг таблиц на всех страницах документа
         try:
@@ -506,7 +503,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     def _tableanalize_process(self, strong: bool):
         """Анализ и разбор табличных данных на всех страницах файла PDF и сохранение их в файл XLSX"""
 
-        self.title = 'Экспорт табличных данных в XLSX'
+        self._title = 'Экспорт табличных данных в XLSX'
 
         # Получаем от пользователя имя нового файла
         outfile = self._get_savefilename(
@@ -517,7 +514,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             return
 
         # Включаем прогресс-бар и блокируем интерфейс
-        self._progress_status_start(self.title + '...')
+        self._progress_status_start(self._title + '...')
 
         # Запускаем парсинг таблиц на всех страницах документа
         try:
@@ -537,10 +534,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
     def _get_savefilename(self, file_dir: str, file_filter: str, file_ext: str, file_delete: bool = False) -> str:
         """Диалог выбора имени файла для сохранения"""
         if file_delete:
-            outfile, _ = QFileDialog.getSaveFileName(self, self.title, file_dir, file_filter)
+            outfile, _ = QFileDialog.getSaveFileName(self, self._title, file_dir, file_filter)
         else:
             outfile, _ = QFileDialog.getSaveFileName(
-                self, self.title, file_dir, file_filter, options=QFileDialog.Option.DontConfirmOverwrite
+                self, self._title, file_dir, file_filter, options=QFileDialog.Option.DontConfirmOverwrite
             )
         # Имя файла не выбрано
         if not outfile:
@@ -597,22 +594,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             if command:
                 subprocess.Popen((command, arg))  # pylint: disable=consider-using-with
             if success_message:
-                QMessageBox.information(self, self.title, success_message)
+                QMessageBox.information(self, self._title, success_message)
         else:
             if fault_message:
-                QMessageBox.warning(self, self.title, fault_message)
+                QMessageBox.warning(self, self._title, fault_message)
             self.statusBar().showMessage('')
 
     def _show_error_message(self, e: BaseException):
         """Вывод сообщения об ошибке"""
         logger.error('', exc_info=True)
-        QMessageBox.critical(self, self.title, f"Ошибка: {e}")
+        QMessageBox.critical(self, self._title, f"Ошибка: {e}")
 
     def _show_yes_no_cancel_message(self, text: str) -> QMessageBox.StandardButton:
         """Вывод сообщения с тремя вариантами ответа Да-Нет-Отмена"""
 
         self.ui.msg_box.setIcon(QMessageBox.Icon.Question)
-        self.ui.msg_box.setWindowTitle(self.title)
+        self.ui.msg_box.setWindowTitle(self._title)
         self.ui.msg_box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
         )
@@ -655,7 +652,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         """
         m_msg_box = QMessageBox(self)
         m_msg_box.setIcon(QMessageBox.Icon.Warning)
-        m_msg_box.setWindowTitle(self.title)
+        m_msg_box.setWindowTitle(self._title)
         m_msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
         m_msg_box.button(QMessageBox.StandardButton.Ok).setText('  ОК  ')
         m_msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
@@ -684,22 +681,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Получаем список ссылок
         url_list = event.mimeData().urls()
-        # Если больше одной, то обрабатываем список
-        if len(url_list) > 1:
-            # Собираем список подходящих файлов из полученного списка ссылок
-            filelist = [
-                url.toLocalFile()
-                for url in url_list
-                if url.isLocalFile() and os.path.splitext(url.toLocalFile())[1].lower() in const.VALID_EXTENSIONS
-            ]
-            # Если список файлов непустой, запускаем интерфейс объединения файлов
-            if filelist:
-                self.show_combine_files_dialog(filelist)
-        else:
-            # Если это правильная ссылка, запускаем открытие файла
-            to_open = url_list[0]
-            if to_open.isValid():
-                self.open_or_combine_files(to_open)
+
+        # Собираем список подходящих файлов из полученного списка ссылок
+        filelist = [
+            url.toLocalFile()
+            for url in url_list
+            if url.isLocalFile() and os.path.splitext(url.toLocalFile())[1].lower() in const.VALID_EXTENSIONS
+        ]
+
+        if not filelist:  # Если список файлов пустой, то выводим сообщение...
+            self.statusBar().showMessage('Данный формат файла/файлов не поддерживается!!!')
+        elif len(filelist) > 1:  # Если больше одного, то запускаем интерфейс объединения файлов
+            self.show_combine_files_dialog(filelist)
+        else:  # Запускаем открытие файла
+            self.open_or_combine_files(filelist[0])
 
         # Подтверждаем принятие объекта
         event.acceptProposedAction()
@@ -714,14 +709,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         lastfn = params.get_lastfilename()
 
         directory = os.path.dirname(lastfn)
-        to_open, _ = QFileDialog.getOpenFileName(
+        filename, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите файл PDF",
             directory,
             f"Поддерживаемые файлы ({''.join(f'*{ext} ' for ext in const.VALID_EXTENSIONS).strip()})",
         )
-        if to_open:
-            self.open_or_combine_files(QUrl.fromLocalFile(to_open))
+        if filename:
+            self.open_or_combine_files(filename)
 
     @Slot()
     def on_actionClose_triggered(self):  # pylint: disable=invalid-name
