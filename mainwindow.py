@@ -4,6 +4,7 @@
 
 import logging
 import os
+import platform
 import subprocess
 
 import fitz
@@ -49,6 +50,9 @@ PyTesseract for Google's Tesseract-OCR Engine (c) 2022 Samuel Hoffstaetter
 Paomedia Small & Flat Icons
 """
 
+DETACHED_PROCESS = 0x00000008
+
+
 # Настраиваем логирование
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -74,6 +78,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Загружаем настройки для запуска внешних приложений
         self._tesseract_cmd, self._pdfviewer_cmd, self._xlseditor_cmd = params.get_apps_paths()
+
+        # Если запустили под Windows, то подменяем пути pdfviewer и xlseditor пустышкой
+        if platform.system() == 'Windows':
+            self._pdfviewer_cmd = self._xlseditor_cmd = 'standard app'
 
         # Добавляем элементы интерфейса для изменения масштаба и выбора номера страницы
         self.ui.zoom_selector = ZoomSelector(self)
@@ -172,7 +180,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         # Привязываем обработчики событий, поступивших от области просмотра документа
         self.pdf_view.current_page_changed.connect(self.ui.page_selector.change_page_number)
         self.pdf_view.zoom_factor_changed.connect(self.ui.zoom_selector.set_zoom_factor)
-        self.pdf_view.rect_selected.connect(self.process_rect_selection)
+        self.pdf_view.rect_selected.connect(self._process_rect_selection)
+        self.pdf_view.coords_text_emited.connect(self.statusBar().showMessage)
 
         # Привязываем обработчик изменения значения зум-фактора и номера страницы в панели инструментов
         self.ui.zoom_selector.zoom_factor_changed.connect(self.pdf_view.set_zoom_factor)
@@ -191,15 +200,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         self.ui.actionZoom_Out.triggered.connect(self.pdf_view.zoom_out)
         self.ui.actionZoom_Normal.triggered.connect(lambda: self.pdf_view.set_zoom_factor(1.0))
 
-        self.ui.actionCbdPageImageCopy.triggered.connect(self.pdf_view.copy_page_image_to_clipboard)
-        self.ui.actionCbdRectImageCopy.triggered.connect(self.pdf_view.copy_rect_image_to_clipboard)
+        self.ui.actionCbdPageImageCopy.triggered.connect(lambda: self.pdf_view.copy_page_image_to_clipboard(False))
+        self.ui.actionCbdRectImageCopy.triggered.connect(lambda: self.pdf_view.copy_page_image_to_clipboard(True))
+
         self.ui.actionCbdRectTextCopy.triggered.connect(self.pdf_view.copy_rect_text_to_clipboard)
         self.ui.actionCbdRectTextTrimCopy.triggered.connect(lambda: self.pdf_view.copy_rect_text_to_clipboard(True))
         self.ui.actionRectRecognizeText.triggered.connect(
-            lambda: self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, trim=False)
+            lambda: self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, is_trim=False)
         )
         self.ui.actionRectRecognizeTextTrim.triggered.connect(
-            lambda: self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, trim=True)
+            lambda: self.pdf_view.recognize_and_copy_to_clipboard(self._tesseract_cmd, is_trim=True)
         )
         self.ui.actionRectRecognizeQR.triggered.connect(self.pdf_view.recognize_qr_and_copy_to_clipboard)
 
@@ -227,51 +237,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             lambda: QMessageBox.about(self, "О программе " + const.APP_TITLE, ABOUT_TEXT)
         )
 
-    def process_rect_selection(self, selected: bool):
-        """Обработчик изменения количества выделенных областей и наличия активного выделения"""
+    def _setup_controls(self):
+        """Обновление доступности контролов и их значений в зависимости от открытого файла"""
 
-        # Переключаем доступность элементов интерфейса в зависимости от наличия активного выделения
-        for widget in (
-            (
-                self.ui.actionCbdRectTextCopy,
-                self.ui.actionCbdRectTextTrimCopy,
-                self.ui.actionCbdRectImageCopy,
-                self.ui.actionRemoveSelection,
-                self.ui.actionRectMode,
-                self.ui.actionRectRecognizeQR,
-            )
-            + (self.ui.actionRectRecognizeText, self.ui.actionRectRecognizeTextTrim)
-            if self.ui.actionRectRecognizeText.isVisible()
-            else ()
-        ):
-            widget.setEnabled(selected)
-
-        # Переключаем доступность элементов интерфейса в зависимости от наличия выделений на текущей странице
-        self.ui.actionCbdRectsInfoCopy.setEnabled(self.pdf_view.selections_count > 0)
-
-        # Переключаем доступность элементов интерфейса в зависимости от наличия выделений во всем документе
-        is_selections_exists = self.pdf_view.selections_all_count > 0
-        for widget in (self.ui.actionCbdRectsAllInfoCopy, self.ui.actionRemoveAllSelections):
-            widget.setEnabled(is_selections_exists)
-
-    def _show_context_menu(self, position):
-        """Вывод контекстного меню (если файл открыт)"""
-
-        if self.pdf_view.current_page > -1:
-            self.ui.pop_menu.exec_(self.pdf_view.mapToGlobal(position))
-
-    def open_or_combine_files(self, files_list=None):
-        """Открыть файл или объединить несколько файлов в один и открыть его"""
-
-        if not files_list:  # если пусто
-            is_file_opened = False
-        elif isinstance(files_list, str):  # если строка
-            self.pdf_view.open(files_list)
-            is_file_opened = self.pdf_view.page_count > 0
-        elif isinstance(files_list, list):  # если список
-            self.pdf_view.combine(files_list)
-            is_file_opened = self.pdf_view.page_count > 0
-
+        # Файл открыт?
+        is_file_opened = self.pdf_view.page_count > 0
         if is_file_opened:
             # Файл открыт - меняем заголовок окна, диапазон страниц
             self.setWindowTitle(const.APP_TITLE + ' - ' + self.pdf_view.current_filename)
@@ -317,6 +287,53 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Отключаем доступность пункта меню удаления всех выделений
         self.ui.actionRemoveAllSelections.setEnabled(False)
+
+    def _process_rect_selection(self, selected: bool):
+        """Обработчик изменения количества выделенных областей и наличия активного выделения"""
+
+        # Переключаем доступность элементов интерфейса в зависимости от наличия активного выделения
+        for widget in (
+            (
+                self.ui.actionCbdRectTextCopy,
+                self.ui.actionCbdRectTextTrimCopy,
+                self.ui.actionCbdRectImageCopy,
+                self.ui.actionRemoveSelection,
+                self.ui.actionRectMode,
+                self.ui.actionRectRecognizeQR,
+            )
+            + (self.ui.actionRectRecognizeText, self.ui.actionRectRecognizeTextTrim)
+            if self.ui.actionRectRecognizeText.isVisible()
+            else ()
+        ):
+            widget.setEnabled(selected)
+
+        # Переключаем доступность элементов интерфейса в зависимости от наличия выделений на текущей странице
+        self.ui.actionCbdRectsInfoCopy.setEnabled(self.pdf_view.selections_count > 0)
+
+        # Переключаем доступность элементов интерфейса в зависимости от наличия выделений во всем документе
+        is_selections_exists = self.pdf_view.selections_all_count > 0
+        for widget in (self.ui.actionCbdRectsAllInfoCopy, self.ui.actionRemoveAllSelections):
+            widget.setEnabled(is_selections_exists)
+
+    def _show_context_menu(self, position):
+        """Вывод контекстного меню (если файл открыт)"""
+
+        if self.pdf_view.current_page > -1:
+            self.ui.pop_menu.exec_(self.pdf_view.mapToGlobal(position))
+
+    def open_or_combine_files(self, files_list=None):
+        """Открыть файл или объединить несколько файлов в один и открыть его,
+        обновить интерфейс в зависимости от результата
+        """
+        if not files_list:  # если пусто
+            pass
+        elif isinstance(files_list, str):  # если строка
+            self.pdf_view.open_file(files_list)
+        elif isinstance(files_list, list):  # если список
+            self.pdf_view.combine_files(files_list)
+
+        # Обновляем значения и доступность контролов
+        self._setup_controls()
 
     def _change_page(self, page):
         """Обработчик события смены номера страницы, полученного от панели инструментов"""
@@ -460,7 +477,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             self._progress_status_refresh(ind * 100 // ranges_page_count)
 
         # Обновляем доступность элементов
-        self.process_rect_selection(self.pdf_view.selected_rect > -1)
+        self._process_rect_selection(self.pdf_view.selected_rect > -1)
 
         # Подсчитываем количество новых выделений
         old_count = self.pdf_view.selections_all_count - old_count
@@ -592,7 +609,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         if is_success:
             self.statusBar().showMessage('Готово!')
             if command:
-                subprocess.Popen((command, arg))  # pylint: disable=consider-using-with
+                # Во всех вариантах запуска (проверялось под Windows) при дебаге дочерний процесс привязан
+                # к этой программе. Поэтому он уничтожается после выхода из основного приложения.
+                if platform.system() == 'Windows':
+                    os.startfile(arg)
+                else:
+                    subprocess.Popen((command, arg))  # pylint: disable=consider-using-with
             if success_message:
                 QMessageBox.information(self, self._title, success_message)
         else:
@@ -719,19 +741,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
             self.open_or_combine_files(filename)
 
     @Slot()
-    def on_actionClose_triggered(self):  # pylint: disable=invalid-name
-        """Обработчик выбора пункта меню <Закрыть>"""
-        self.pdf_view.close()
-        # noinspection PyTypeChecker
-        self.open_or_combine_files('')
-
-    @Slot()
     def on_actionSaveAs_triggered(self):  # pylint: disable=invalid-name
         """Обработчик выбора пункта меню <Сохранить как...>"""
         dlg = SaveAsDialog(self)
         if dlg.exec_():
             self._save_files_process(dlg.params, False)
             self._progress_status_turnoff()
+
+    @Slot()
+    def on_actionClose_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Закрыть>"""
+        self.pdf_view.close_file()
+        self._setup_controls()
 
     @Slot()
     def on_actionCensore_triggered(self):  # pylint: disable=invalid-name

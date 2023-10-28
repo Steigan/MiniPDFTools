@@ -1,6 +1,6 @@
-Pillow
-pyside2
-PyMuPDF
-XlsxWriter
-pyzbar
-pytesseract
+Pillow==9.5.0
+PySide2==5.15.2.1
+PyMuPDF==1.23.5
+XlsxWriter==3.1.9
+pyzbar==0.1.9
+pytesseract==0.3.10

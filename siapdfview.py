@@ -479,6 +479,7 @@ class SiaPdfView(QScrollArea):
     zoom_factor_changed = Signal(float)
     rect_selected = Signal(bool)
     scroll_requested = Signal(QPoint, QPoint)
+    coords_text_emited = Signal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -509,36 +510,52 @@ class SiaPdfView(QScrollArea):
         self.selections: list[SelectionRect] = []
         self.selections_all: list[SelectionRect] = []
 
-        self.move_mode = 0
+        self.move_mode = MODE_MOVE_NONE
 
+        # Настраиваем корневой виджет (серый фон, без рамки, постоянная видимость скроллбаров, "фокусируемость")
         self.setBackgroundRole(QPalette.ColorRole.Dark)
         self.setFrameStyle(QFrame.NoFrame)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
+        # Добавляем виджет-контейнер страницы "внутрь" корневого виджета (тоже серый фон, выкл. авторесайзинг,
+        # маленький размер для начала, сдвигаем в левый верчний угол корневого виджета)
         self._board_widget = BoardWidget(self)
         self._board_widget.setBackgroundRole(QPalette.ColorRole.Dark)
         self._board_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self._board_widget.setFixedSize(50, 50)
         self._board_widget.move(0, 0)
 
-        self._page_widget = PageWidget(self._board_widget, self)
+        # Устанавливаем виджет-контейнер страницы основным внутренним виджетом корневого виджета
+        self.setWidget(self._board_widget)
+
+        # Добавляем виджет страницы "внутрь" виджета-контейнера (базовый цвет фона, выкл. авторесайзинг,
+        # вкл. автомасштабирование содержимого - т.е. размер изображения внутри будет подстраиваться
+        # под размеры самого виджета)
+        self._page_widget = PageWidget(self._board_widget, self)  # передаем и ссылку на корневой виджет
         self._page_widget.setBackgroundRole(QPalette.ColorRole.Base)
         self._page_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self._page_widget.setScaledContents(True)
 
+        # Передаем виджету-контейнеру ссылку на виджет страницы
         self._board_widget.set_page_widget(self._page_widget)
-        self.setWidget(self._board_widget)
 
+        # Включаем принудительный трекинг перемещения мыши для отлова события mouseMoveEvent внутри
+        # виджета-контейнера и виджета страницы
         self._board_widget.setMouseTracking(True)
         self._page_widget.setMouseTracking(True)
+
+        # Выключаем видимость виджета-контейнра
         self._board_widget.setVisible(False)
 
-        self.scroll_requested.connect(self.scroll_point_to_point)
+        # Связываем сигнал scroll_requested с методом-обработчиком
+        self.scroll_requested.connect(self._scroll_point_to_point)
 
-    def combine(self, filelist: list):
+    def combine_files(self, filelist: list):
         """Скомбинировать документ"""
+
+        # Заранее готовим объект сообщения об ошибке
         m_msg_box = QMessageBox(self)
         m_msg_box.setIcon(QMessageBox.Icon.Question)
         m_msg_box.setWindowTitle("Ошибка открытия файла")
@@ -550,86 +567,131 @@ class SiaPdfView(QScrollArea):
         m_msg_box.button(QMessageBox.StandardButton.YesToAll).setText('  Пропустить все  ')
         m_msg_box.button(QMessageBox.StandardButton.Cancel).setText('  Отмена  ')
 
-        skip_all = False
+        # Пропустить все файлы с ошибками открытия
+        is_skip_all = False
 
-        self.close()
-        self._current_filename = ''  # Имя текущего файла
-        self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
+        # Закрываем предыдущий файл
+        self.close_file()
 
+        # Создаем основной объект fitz.Document
         self._doc = fitz.Document()
+
+        # Обходим список файлов
         for filename in filelist:
             try:
+                # Открываем файл
                 doc = fitz.Document(filename)
+                # Это не PDF?
                 if not doc.is_pdf:
+                    # Пытаемся сконвертировать в PDF
+                    # TODO: подогнать под А4???
                     pdfbytes = doc.convert_to_pdf()
                     doc.close()
                     doc = fitz.open("pdf", pdfbytes)
 
+                # Этот документ зашифрован?
                 if doc.needs_pass:
+                    # Запрашиваем пароль и пытаемся открыть документ
                     self._decrypt_doc(filename, doc)
+
             except Exception as e:
+                # Если произошла ошибка, то записываем кляузу в логи
                 logger.error(filename, exc_info=True)
-                if skip_all:
+
+                # Если ранее был выбран вариант пропускать все ошибки, то идем к следующему файлу
+                if is_skip_all:
                     continue
 
+                # Выводим сообщение об ошибке с тремя вариантами ответа Пропустить-Пропустить все-Отмена
                 m_msg_box.setText(f'Ошибка: {e}\nФайл: {filename}')
                 res = m_msg_box.exec()
                 if res == QMessageBox.StandardButton.Cancel:
-                    self.close()
+                    # Пользователь выбрал отмену
+                    self.close_file()
                     return
 
+                # Если пользователь выбрал <Пропустить все>, то далее будем пропускать все ошибкифайлу
                 if res == QMessageBox.StandardButton.YesToAll:
-                    skip_all = True
+                    is_skip_all = True
                 continue
+
+            # Если файл не зашифрован (либо пароль был снят), добавляем его в основной документ
             if not doc.is_encrypted:
                 self._doc.insert_pdf(doc, from_page=0, to_page=len(doc) - 1)
+
+            # Закрываем временный объект
             doc.close()
 
         if len(self._doc):
             self._current_filename = '*** Результат объединения файлов ***'  # Имя текущего файла
-            self._scale_factor = 1.0
-            self._show_page(0)
-            self._board_widget.setVisible(True)
-            self.zoom_factor_changed.emit(self._scale_factor)
+            self._scale_factor = 1.0  # Масштаб 100%
+            self._show_page(0)  # Отображаем первую страницу
+            self._board_widget.setVisible(True)  # Включаем виджет-контейнер
+            self.zoom_factor_changed.emit(self._scale_factor)  # Эмит сигнала zoom_factor_changed
         else:
-            self.close()
+            # Закрываем и обнуляем объект
+            self._doc.close()
+            self._doc = None
 
-    def open(self, filename: str):
+    def open_file(self, filename: str):
         """Открыть документ"""
-        self.close()
-        self._current_filename = ''  # Имя текущего файла
-        self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
+
+        # Закрываем предыдущий файл
+        self.close_file()
+
+        # Если имя файла не передано, то выходим
         if not filename:
             return
+
         try:
+            # Создаем основной объект fitz.Document и открываем файл
             self._doc = fitz.Document(filename)
-            self._is_real_file = True  # Это настоящий файл (или виртуальный/новый)
+            self._is_real_file = True  # Это настоящий файл
             self._current_filename = filename  # Имя текущего файла
+
+            # Это не PDF?
             if not self._doc.is_pdf:
+                # Пытаемся сконвертировать в PDF
+                # TODO: подогнать под А4???
                 pdfbytes = self._doc.convert_to_pdf()
                 self._doc.close()
                 self._current_filename = '*** Новый файл ****'  # Имя текущего файла
-                self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
+                self._is_real_file = False  # Это виртуальный/новый файл
                 self._doc = fitz.open('pdf', pdfbytes)
+
+            # Этот документ зашифрован?
             if self._doc.needs_pass:
+                # Запрашиваем пароль и пытаемся открыть документ
                 self._decrypt_doc(filename, self._doc)
+
+            # Если файл так и остался зашифрован
             if self._doc.is_encrypted:
+                # Закрываем и обнуляем объект
                 self._doc.close()
+                self._doc = None
                 self._current_filename = ''  # Имя текущего файла
                 self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
                 return
 
-            self._scale_factor = 1.0
-            self._show_page(0)
-            self._board_widget.setVisible(True)
-            self.zoom_factor_changed.emit(self._scale_factor)
+            self._scale_factor = 1.0  # Масштаб 100%
+            self._show_page(0)  # Отображаем первую страницу
+            self._board_widget.setVisible(True)  # Включаем виджет-контейнер
+            self.zoom_factor_changed.emit(self._scale_factor)  # Эмит сигнала zoom_factor_changed
+
         except Exception as e:
+            # Если произошла ошибка, то записываем кляузу в логи и выводим сообщение
             logger.error(filename, exc_info=True)
             QMessageBox.critical(self, 'Ошибка открытия файла', f'Ошибка: {e}\nФайл: {filename}')
-            self.close()
+            # Закрываем и обнуляем объект
+            self._doc.close()
+            self._doc = None
+            self._current_filename = ''  # Имя текущего файла
+            self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
 
-    def _decrypt_doc(self, filename: str, doc: fitz.Document):
+    def _decrypt_doc(self, filename: str, doc: fitz.Document) -> bool:
         """Расшифровать документ"""
+
+        # Диалог для запроса пародя
         m_input_dlg = QInputDialog(self)
         m_input_dlg.setWindowTitle('Введите пароль')
         m_input_dlg.setLabelText(f'Для открытия файла "{filename}" требуется пароль!\nВведите пароль:')
@@ -638,33 +700,54 @@ class SiaPdfView(QScrollArea):
         m_input_dlg.setInputMode(QInputDialog.InputMode.TextInput)
         m_input_dlg.setTextEchoMode(QLineEdit.Password)
         while True:
+            # Очищаем поле ввода пароля
             m_input_dlg.setTextValue('')
+
+            # Выводим диалог
             res = m_input_dlg.exec_()
+
             if res == QDialog.DialogCode.Accepted:
+                # Пользователь ввел прароль
                 self._psw = m_input_dlg.textValue()
+                # Пытаемся его применить
                 doc.authenticate(self._psw)
             else:
-                return
+                # Пользователь отказался - выходим с False
+                return False
+
+            # Если документ расшифрован, то выходим с True
             if not doc.is_encrypted:
-                return
+                return True
+
+            # Документ не расшифрован, поэтому меняем сообщение и повторяем цикл
             m_input_dlg.setLabelText(
                 f'Пароль открытия файла "{filename}" не верный!\nВведите правильный, либо нажмите "Отмена":'
             )
 
-    def close(self):
+    def close_file(self):
         """Закрыть документ"""
         if self._doc is not None:
+            # Закрываем и обнуляем объект
             self._doc.close()
             self._doc = None
+
+            # Сбрасываем переменные
             self._current_filename = ''  # Имя текущего файла
             self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
-            self._current_page = -1
+            self._current_page = -1  # Текущая страница
+            self.selected_rect = -1  # Текущее выделение
+            self.selections = []  # Список выделений на текущей странице
+            self.selections_all = []  # Список всех выделений
+
+            # Сбрасываем виджет-контейнер в исходное состояние
             self._board_widget.setVisible(False)
             self._board_widget.setFixedSize(50, 50)
             self._board_widget.move(0, 0)
-            self.selections = []
-            self.selections_all = []
-            self.selected_rect = -1
+
+            # Очищаем виджет страницы от старого изображения
+            self._page_widget.clear()
+
+            # Эмитируем сигнал rect_selected
             self.rect_selected.emit(False)
 
     @property
@@ -710,144 +793,243 @@ class SiaPdfView(QScrollArea):
         return self._doc.page_count
 
     def goto_page(self, pno: int):
+        """Переход на указанную страницу"""
         self._show_page(pno)
 
     def goto_next_page(self):
+        """Переход на следующую страницу"""
         if self._current_page < self._doc.page_count - 1:
             self._show_page(self._current_page + 1)
 
     def goto_prev_page(self):
+        """Переход на предыдущую страницу"""
         if self._current_page > 0:
             self._show_page(self._current_page - 1)
 
     def goto_home(self):
+        """Переход на первую страницу"""
         if self.page_count > 0:
             self._show_page(0)
 
     def goto_end(self):
+        """Переход на последнюю страницу"""
         if self.page_count > 0:
             self._show_page(self._doc.page_count - 1)
 
     def zoom_in(self):
+        """Увеличить масштаб"""
         self.scale_image(1.25)
 
     def zoom_out(self):
+        """Уменьшить масштаб"""
         self.scale_image(0.8)
 
     def set_zoom_factor(self, factor):
+        """Установить указанный масштаб"""
         self.scale_image(1, None, factor)
 
-    def copy_page_image_to_clipboard(self):
-        if self._current_page > -1:
-            img = self._page_widget.pixmap().toImage()
-            dpm = self._dpi / 0.0254
-            img.setDotsPerMeterX(dpm)
-            img.setDotsPerMeterY(dpm)
-            QGuiApplication.clipboard().setImage(img)
+    def emit_coords_text(self, pt: QPoint):
+        """Генерируем сигнал об изменении координат указателя мыши"""
+        # Если курсор за пределами страницы, то ничего не делаем
+        if not (0 <= pt.x() <= self._page_widget.width() and 0 <= pt.y() <= self._page_widget.height()):
+            return
+        # Превращаем координаты мыши в fitz.Rect
+        rc = fitz.Rect(pt.x(), pt.y(), pt.x(), pt.y())
+        # Корректируем их на _scale_factor
+        rc *= 3 / self._scale_factor
+        # Приводим к системе координат документа (с учетом поворота страницы)
+        rc = rc / self._matrix
+        # Эмитируем сигнал coords_text_emited
+        self.coords_text_emited.emit(f'{round(rc.x0, 2)} : {round(rc.y0, 2)}', 0)
 
-    def copy_rect_image_to_clipboard(self):
-        if self._current_page > -1 and self.selected_rect > -1:
-            img = self._page_widget.pixmap().toImage()
-            dpm = self._dpi / 0.0254
-            img.setDotsPerMeterX(dpm)
-            img.setDotsPerMeterY(dpm)
+    def copy_page_image_to_clipboard(self, is_selection: bool = False):
+        """Скопировать изображение всей страницы или из текущей выделенной области в буфер обмена"""
+        # Если нет текущей страницы, то сразу выходим
+        if self._current_page == -1:
+            return
+
+        # Если копируем выделение, а его нет, то тоже выходим
+        if is_selection and self.selected_rect == -1:
+            return
+
+        # Берем всё изображение из виджета страницы
+        img = self._page_widget.pixmap().toImage()
+        # Устанавливаем соответствующий DPI/DPM
+        dpm = self._dpi / 0.0254
+        img.setDotsPerMeterX(dpm)
+        img.setDotsPerMeterY(dpm)
+
+        if is_selection:
+            # Если копируем выделенную область, то вырезаем ее из изображения страницы
             r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
-            QGuiApplication.clipboard().setImage(img.copy(r))
+            img = img.copy(r)
 
-    def copy_rect_text_to_clipboard(self, trim: bool = False):
-        if self._current_page > -1 and self.selected_rect > -1:
-            r = self.selections[self.selected_rect].r_f
-            rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
-            rc = rc / self._matrix
-            rc = rc / self._doc[self._current_page].rotation_matrix
-            recttext = self._doc[self._current_page].get_text("text", clip=rc).rstrip()
-            if trim:
-                recttext = re.sub(r'\s+', ' ', recttext)
-            if not recttext:
-                show_info_msg_box(
-                    self, 'Копирование текста', 'В выделенном участке отсутствует текст в текстовом слое.'
-                )
-            else:
-                QGuiApplication.clipboard().setText(recttext)
+        # Запихиваем изображение в буфер обмена
+        QGuiApplication.clipboard().setImage(img)
 
-    def recognize_and_copy_to_clipboard(self, tesseract_cmd: str, trim: bool):
-        if self._current_page > -1 and self.selected_rect > -1:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-            img = self._page_widget.pixmap().toImage()
-            r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
-            img = ImageQt.fromqimage(img.copy(r))
-            recttext = pytesseract.image_to_string(img, lang='rus+eng')
-            if trim:
-                recttext = re.sub(r'\s+', ' ', recttext)
-            if not recttext:
-                show_info_msg_box(self, 'Распознание текста', 'В выделенном участке не удалось распознать текст.')
-            else:
-                QGuiApplication.clipboard().setText(recttext)
+    def copy_rect_text_to_clipboard(self, is_trim: bool = False):
+        """Скопировать текст из текстового слоя текущей выделенной области в буфер обмена.
+        Если is_trim == True, то убираем из текста лишние "пробельные" символы
+        """
+        # Если нет текущей страницы или нет текущего выделения, то сразу выходим
+        if self._current_page == -1 or self.selected_rect == -1:
+            return
+
+        # Получаем координаты выделения
+        r = self.selections[self.selected_rect].r_f
+        rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
+        # Трансформируем их в систему координат документа
+        rc = rc / self._matrix
+        rc = rc / self._doc[self._current_page].rotation_matrix
+        # Получаем текст
+        recttext = self._doc[self._current_page].get_text("text", clip=rc).rstrip()
+        # Если is_trim == True, то убираем из текста лишние "пробельные" символы
+        if is_trim:
+            recttext = re.sub(r'\s+', ' ', recttext)
+
+        # Текст не найден?
+        if not recttext:
+            show_info_msg_box(self, 'Копирование текста', 'В выделенном участке отсутствует текст в текстовом слое.')
+        else:
+            # Запихиваем текст в буфер обмена
+            QGuiApplication.clipboard().setText(recttext)
+
+    def recognize_and_copy_to_clipboard(self, tesseract_cmd: str, is_trim: bool):
+        """Распознать текст из текущей выделенной области и скопировать его в буфер обмена.
+        Если is_trim == True, то убираем из текста лишние "пробельные" символы
+        """
+        # Если нет текущей страницы или нет текущего выделения, то сразу выходим
+        if self._current_page == -1 or self.selected_rect == -1:
+            return
+
+        # Настраиваем pytesseract
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        # Берем всё изображение из виджета страницы
+        img = self._page_widget.pixmap().toImage()
+        # Получаем координаты выделения
+        r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
+        # Вырезаем выделенную область из изображения страницы
+        img = ImageQt.fromqimage(img.copy(r))
+        # Распознаем
+        recttext = pytesseract.image_to_string(img, lang='rus+eng')
+        # Если is_trim == True, то убираем из текста лишние "пробельные" символы
+        if is_trim:
+            recttext = re.sub(r'\s+', ' ', recttext)
+
+        # Текст не найден?
+        if not recttext:
+            show_info_msg_box(self, 'Распознание текста', 'В выделенном участке не удалось распознать текст.')
+        else:
+            # Запихиваем текст в буфер обмена
+            QGuiApplication.clipboard().setText(recttext)
 
     def recognize_qr_and_copy_to_clipboard(self):
-        if self._current_page > -1 and self.selected_rect > -1:
-            img = self._page_widget.pixmap().toImage()
-            r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
-            img = ImageQt.fromqimage(img.copy(r))
+        """Распознать текст из текущей выделенной области и скопировать его в буфер обмена.
+        Если is_trim == True, то убираем из текста лишние "пробельные" символы
+        """
+        # Если нет текущей страницы или нет текущего выделения, то сразу выходим
+        if self._current_page == -1 or self.selected_rect == -1:
+            return
+
+        # Берем всё изображение из виджета страницы
+        img = self._page_widget.pixmap().toImage()
+        # Получаем координаты выделения
+        r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
+        # Вырезаем выделенную область из изображения страницы
+        img = ImageQt.fromqimage(img.copy(r))
+        # Распознаем QR коды
+        decocde_qr = decode(img, [ZBarSymbol.QRCODE])
+        # Если коды не найдены, пробуем инвертировать изображение
+        if not decocde_qr:
+            img = ImageOps.invert(img)
+            # Еще раз пытаемся распознать QR коды
             decocde_qr = decode(img, [ZBarSymbol.QRCODE])
-            if not decocde_qr:
-                img = ImageOps.invert(img)
-                decocde_qr = decode(img, [ZBarSymbol.QRCODE])
-            if not decocde_qr:
-                show_info_msg_box(self, 'Распознание QR-кодов', 'Данные не распознаны.')
+
+        # Если коды так и не найдены, выводим сообщение
+        if not decocde_qr:
+            show_info_msg_box(self, 'Распознание QR-кодов', 'Данные не распознаны.')
+        else:
+            # Иначе собираем все найденные коды в один текст
+            txt = ''
+            for qr_obj in decocde_qr:
+                txt += ('\n-------------------\n' if txt else '') + qr_obj.data.decode('utf-8')
+
+            # Запихиваем текст в буфер обмена
+            QGuiApplication.clipboard().setText(txt)
+
+    def copy_rects_info_to_clipboard(self, is_all: bool = False):
+        """Скопировать информацию о выделенных областях в буфер обмена.
+        Если is_all == True, то информацию берем со всех страниц, иначе - только с текущей
+        """
+        # Если нет текущей страницы, то сразу выходим
+        if self._current_page == -1:
+            return
+
+        if is_all:
+            # Если информацию берем со всех страниц, то берем список всех выделений
+            sels = self.selections_all.copy()
+            recttext = '№ п/п, страница, вращение: область\n'
+        else:
+            # иначе берем список выделений на текущей странице
+            sels = self.selections.copy()
+            recttext = f'Угол вращения исходной страницы: {self._doc[self._current_page].rotation}\n'
+            recttext += '№ п/п, страница: область\n'
+
+        if len(sels) == 0:  # Список выделений пуст?
+            recttext = 'Нет выделенных участков!'
+        else:
+            # Запоминаем объект с текущим выделением
+            if self.selected_rect > -1:
+                selected = self.selections[self.selected_rect]
             else:
-                txt = ''
-                for qr_obj in decocde_qr:
-                    txt += ('\n-------------------\n' if txt else '') + qr_obj.data.decode('utf-8')
+                selected = None
 
-                QGuiApplication.clipboard().setText(txt)
+            # Запоминаем номер текущей страницы
+            pno = self._current_page
 
-    def copy_rects_info_to_clipboard(self, fl_all: bool = False):
-        if self._current_page > -1:
-            if fl_all:
-                sels = self.selections_all.copy()
-                recttext = '№ п/п, страница, вращение: область\n'
-            else:
-                sels = self.selections.copy()
-                recttext = f'Угол вращения исходной страницы: {self._doc[self._current_page].rotation}\n'
-                recttext += '№ п/п, страница: область\n'
+            # Сортируем список выделений
+            sels.sort(key=lambda x: (x.pno, x.r_f.y(), x.r_f.x()))
 
-            if len(sels) == 0:
-                recttext = 'Нет выделенных участков!'
-            else:
-                if self.selected_rect > -1:
-                    selected = self.selections[self.selected_rect]
-                else:
-                    selected = None
+            # Обходим все выделенные области
+            for i, s in enumerate(sels):
+                if is_all:
+                    # Если собираем информацию со всех страниц, то меняем номер страницы
+                    # Все глобальные выделения перечисляются только один раз - на первой странице
+                    pno = max(s.pno, 0)
 
-                def selssort_key(x):
-                    return x.pno, x.r_f.y(), x.r_f.x()
+                # Получаем координаты области и переводим их в систему координат страницы
+                # документа (с учетом ее поворота!!!)
+                r = s.r_f
+                rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
+                rc = rc / self._matrix
 
-                sels.sort(key=selssort_key)
-                pno = self._current_page
-                for i, s in enumerate(sels):
-                    r = s.r_f
-                    rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
-                    rc = rc / self._matrix
-                    if fl_all:
-                        pno = max(s.pno, 0)
+                # Дополняем текст с информацией о номере страницы и т.п.
+                recttext += f"{i + 1}{'*' if s is selected else ''}, {pno + 1}{'**' if s.pno == -1 else ''}"
 
-                    recttext += f"{i + 1}{'*' if s is selected else ''}, {pno + 1}{'**' if s.pno == -1 else ''}"
-                    if fl_all:
-                        recttext += f", {self._doc[pno].rotation}"
-                    recttext += f": ({round(rc.x0, 2)}, {round(rc.y0, 2)}, {round(rc.x1, 2)}, {round(rc.y1, 2)})\n"
+                if is_all:
+                    # Если собираем информацию со всех страниц, то добавляем сведения о повороте страницы
+                    recttext += f", {self._doc[pno].rotation}"
 
-            QGuiApplication.clipboard().setText(recttext)
-            show_info_msg_box(self, 'Информация о выделенных участках', recttext)
+                # Дополняем текст с информацией о координатах
+                recttext += f": ({round(rc.x0, 2)}, {round(rc.y0, 2)}, {round(rc.x1, 2)}, {round(rc.y1, 2)})\n"
+
+        # Запихиваем текст в буфер обмена и выводим его в сообщении
+        QGuiApplication.clipboard().setText(recttext)
+        show_info_msg_box(self, 'Информация о выделенных участках', recttext)
 
     def switch_rect_mode(self):
-        if self._current_page > -1 and self.selected_rect > -1:
-            r = self.selections[self.selected_rect]
-            if r.pno == -1:
-                r.pno = self._current_page
-            else:
-                r.pno = -1
-            self._page_widget.update()
+        """Переключить признак глобальности выделения"""
+        # Если нет текущей страницы или нет текущего выделения, то сразу выходим
+        if self._current_page == -1 or self.selected_rect == -1:
+            return
+
+        # Меняем признак глобальности выделения
+        self.selections[self.selected_rect].pno = (
+            self._current_page if self.selections[self.selected_rect].pno == -1 else -1
+        )
+
+        # Обновляем экран
+        self._page_widget.update()
 
     def rotate_pages(self, n_dir: int, fl_all: bool):
         if self._current_page > -1:
@@ -933,7 +1115,7 @@ class SiaPdfView(QScrollArea):
         super().scrollContentsBy(dx, dy)
         self._page_widget.update()
 
-    def scroll_point_to_point(self, src_pt: QPoint, dest_pt: QPoint):
+    def _scroll_point_to_point(self, src_pt: QPoint, dest_pt: QPoint):
         """Попытаться прокрутить рабочую область так, чтобы точка из системы координат изображения src_pt
            оказалась в точке dest_pt системы координат области
 
@@ -1131,13 +1313,13 @@ class SiaPdfView(QScrollArea):
         if self._current_page != -1:
             self._set_sizes()
 
-    def wheelEvent(self, wheelEvent: QWheelEvent):
+    def wheelEvent(self, event: QWheelEvent):
         """Обработчик прокрутки колесика мыши"""
         # Если прокрутка с зажатыми Alt или Shift, то выполняем стандартные действия, иначе - игнорируем
-        if (wheelEvent.modifiers() & Qt.KeyboardModifier.AltModifier) or (
-            wheelEvent.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        if (event.modifiers() & Qt.KeyboardModifier.AltModifier) or (
+            event.modifiers() & Qt.KeyboardModifier.ShiftModifier
         ):
-            super().wheelEvent(wheelEvent)
+            super().wheelEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
         """Обработчик нажатия клавиши клавиатуры"""
@@ -1157,7 +1339,7 @@ class SiaPdfView(QScrollArea):
                 # нажат Shift?
                 if shft:
                     # перемещаем фокус на предыдущее выделение
-                    if self.selected_rect == 0:
+                    if self.selected_rect <= 0:
                         self.selected_rect = len(self.selections)
                     self.selected_rect -= 1
                 else:
@@ -1172,6 +1354,12 @@ class SiaPdfView(QScrollArea):
                 # Смещаем изображение, чтобы был виден левый верхний угол фокусного выделения
                 p_pt = self._page_widget.mapToParent(self.selections[self.selected_rect].r.topLeft())
                 self.ensureVisible(p_pt.x(), p_pt.y(), 50, 50)
+
+                # Обновляем экран
+                self._page_widget.update()
+
+            # Выходим из обработки Key_Enter, Key_Return, Key_Space
+            return
 
         # Если фокус не находится на выделении, то выполняем стандартные процедуры и выходим
         if self.selected_rect == -1:
@@ -1275,8 +1463,8 @@ class BoardWidget(QWidget):
 
     def __init__(self, parent: SiaPdfView = None):
         super().__init__(parent)
-        self._root_widget = parent
-        self._page_widget = None
+        self._root_widget = parent  # корневой виджет
+        self._page_widget = None  # виджет страницы
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def set_page_widget(self, page_widget):
@@ -1289,8 +1477,10 @@ class BoardWidget(QWidget):
     def mousePressEvent(self, event: QMouseEvent):
         """Обработчик нажатия кнопки мыши"""
 
-        # Если это не левая кнопка, то выполняем стандартную обработку и выходим
-        if event.button() != Qt.MouseButton.LeftButton:
+        # Если это не левая и не правая кнопка, то выполняем стандартную обработку и выходим
+        # Правую кнопку обрабатываем потому, что перед открытием контекстного меню необходимо
+        # сменить фокус на элемент под курсором мыши
+        if event.button() not in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
             super().mousePressEvent(event)
             return
 
@@ -1306,19 +1496,19 @@ class BoardWidget(QWidget):
             r = root_widget.selections[root_widget.selected_rect]
             # Проверяем как соотносится положение мыши с выделенной областью
             dir_rect = r.dir_rect(pt)
-            if dir_rect == DIR_IN:  # внутри
+            if event.button() == Qt.MouseButton.LeftButton and dir_rect == DIR_IN:  # левая кнопка внутри
                 # Переходим в режим перемещения
                 root_widget.move_mode = MODE_MOVE_ALL
                 # "Захватываем" якорную точку
                 root_widget.set_selection_point(pt, 3)
 
-            elif dir_rect == DIR_OUT:  # снаружи
+            elif dir_rect == DIR_OUT:  # левая или правая кнопка снаружи
                 # Снимаем фокус с выделенной области
                 root_widget.selected_rect = -1
                 # Эмитируем сигнал rect_selected
                 root_widget.rect_selected.emit(False)
 
-            else:
+            elif event.button() == Qt.MouseButton.LeftButton:  # остальные варианты для левой кнопки
                 # Переходим в режим изменения размера
                 if dir_rect in (DIR_W, DIR_E):  # на середине вертикальных сторон
                     root_widget.move_mode = MODE_MOVE_VERT_BORDER
@@ -1342,15 +1532,26 @@ class BoardWidget(QWidget):
                 if dir_rect == DIR_IN:  # внутри
                     # Устанавливаем фокус на эту выделенную область
                     root_widget.selected_rect = i
+                    # Эмитируем сигнал rect_selected
+                    root_widget.rect_selected.emit(True)
+
+                    # Если это правая кнопка, то обновляем экран с новым фокусом
+                    if event.button() == Qt.MouseButton.RightButton:
+                        self._page_widget.update()
+                        break
+
                     # Переходим в режим перемещения
                     root_widget.move_mode = MODE_MOVE_ALL
                     # "Захватываем" якорную точку
                     root_widget.set_selection_point(pt, 3)
                     # Меняем форму курсора на крест
                     self.setCursor(Qt.CursorShape.SizeAllCursor)
-                    # Эмитируем сигнал rect_selected
-                    root_widget.rect_selected.emit(True)
                     break
+
+        # Если это правая кнопка, то выполняем стандартную обработку и выходим
+        if event.button() == Qt.MouseButton.RightButton:
+            super().mousePressEvent(event)
+            return
 
         # Все еще нет фокуса на выделении?
         if root_widget.selected_rect == -1:
@@ -1379,7 +1580,7 @@ class BoardWidget(QWidget):
         # Выполняем стандартную обработку и выходим
         super().mousePressEvent(event)
 
-    def set_cursor_shape(self, pt):
+    def set_cursor_shape(self, pt: QPoint):
         """Установка формы курсора мыши в зависимости от того, что под ним"""
         # По умолчанию такое вот значение
         cursor_shape = Qt.CursorShape.BlankCursor
@@ -1431,7 +1632,11 @@ class BoardWidget(QWidget):
 
         # Не находимся в режиме перемещения или изменения размера выделенной области?
         if self._root_widget.move_mode == MODE_MOVE_NONE:
-            self.set_cursor_shape(pt)  # просто меняем форму курсора, если нужно
+            self.set_cursor_shape(pt)  # меняем форму курсора, если нужно
+            # Если нажат Alt, то выводим координаты в системе координат документа (с учетом поворота страницы)
+            if event.modifiers() & Qt.KeyboardModifier.AltModifier:
+                # Обрабатываем движение мыши с нажатым Alt
+                self._root_widget.emit_coords_text(pt)
 
         elif self._root_widget.move_mode == MODE_MOVE_CORNER:  # двигаем угол
             self._root_widget.set_selection_point(pt, 2)
@@ -1533,8 +1738,8 @@ class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
 
     def __init__(self, parent: BoardWidget = None, root_widget: SiaPdfView = None):
         super().__init__(parent)
-        self._board_widget = parent
-        self._root_widget = root_widget
+        self._board_widget = parent  # виджет-контейнер страницы
+        self._root_widget = root_widget  # корневой виджет
 
         # Стиль контура активных выделений
         self.pen = QPen()
@@ -1611,7 +1816,7 @@ class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
                 painter.setPen(self.pen2)
                 painter.setBrush(self.fill2)
 
-                #  Углы
+                #  Маркеры на углах
                 painter.drawRect(r.x1() - 3, r.y1() - 3, 6, 6)
                 painter.drawRect(r.x2() - 3, r.y1() - 3, 6, 6)
                 painter.drawRect(r.x1() - 3, r.y2() - 3, 6, 6)
@@ -1619,7 +1824,7 @@ class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
 
                 xc = (r.x1() + r.x2()) // 2
                 yc = (r.y1() + r.y2()) // 2
-                #  Цетры сторон
+                #  Маркеры на серединах сторон
                 painter.drawRect(xc - 3, r.y1() - 3, 6, 6)
                 painter.drawRect(r.x1() - 3, yc - 3, 6, 6)
                 painter.drawRect(r.x2() - 3, yc - 3, 6, 6)

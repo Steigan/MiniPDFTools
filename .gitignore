@@ -141,3 +141,4 @@ venv.bak/
 setup.cfg
 pyproject.toml
 .idea/
+freeze.txt
