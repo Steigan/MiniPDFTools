@@ -289,15 +289,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Переключаем доступность элементов интерфейса в зависимости от наличия активного выделения
         for widget in (
-            (
-                self.ui.actionCbdRectTextCopy,
-                self.ui.actionCbdRectTextTrimCopy,
-                self.ui.actionCbdRectImageCopy,
-                self.ui.actionRemoveSelection,
-                self.ui.actionRectMode,
-                self.ui.actionRectRecognizeQR,
-            )
-            + (self.ui.actionRectRecognizeText, self.ui.actionRectRecognizeTextTrim)
+            self.ui.actionCbdRectTextCopy,
+            self.ui.actionCbdRectTextTrimCopy,
+            self.ui.actionCbdRectImageCopy,
+            self.ui.actionRemoveSelection,
+            self.ui.actionRectMode,
+            self.ui.actionRectRecognizeQR,
+        ) + (
+            (self.ui.actionRectRecognizeText, self.ui.actionRectRecognizeTextTrim)
             if self.ui.actionRectRecognizeText.isVisible()
             else ()
         ):

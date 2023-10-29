@@ -1508,6 +1508,8 @@ class BoardWidget(QWidget):
                 root_widget.selected_rect = -1
                 # Эмитируем сигнал rect_selected
                 root_widget.rect_selected.emit(False)
+                # Обновляем экран
+                self._page_widget.update()
 
             elif event.button() == Qt.MouseButton.LeftButton:  # остальные варианты для левой кнопки
                 # Переходим в режим изменения размера
