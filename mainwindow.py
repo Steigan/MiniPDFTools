@@ -79,10 +79,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         # Загружаем настройки для запуска внешних приложений
         self._tesseract_cmd, self._pdfviewer_cmd, self._xlseditor_cmd = params.get_apps_paths()
 
-        # Если запустили под Windows, то подменяем пути pdfviewer и xlseditor пустышкой
-        if platform.system() == 'Windows':
-            self._pdfviewer_cmd = self._xlseditor_cmd = 'standard app'
-
         # Добавляем элементы интерфейса для изменения масштаба и выбора номера страницы
         self.ui.zoom_selector = ZoomSelector(self)
         self.ui.zoom_selector.setMaximumWidth(150)

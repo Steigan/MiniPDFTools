@@ -5,6 +5,7 @@
 import configparser
 import enum
 import os
+import platform
 import re
 
 from PySide2.QtCore import QSettings
@@ -53,13 +54,13 @@ class SaveParams:  # pylint: disable=too-many-instance-attributes
         # Считывание настроек
         settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
 
-        self.format = FileFormat(int(settings.value('format', str(FileFormat.FMT_PDF))))
-        self.format_censore = FileFormat(int(settings.value('format_censore', str(FileFormat.FMT_PDF_JPEG))))
-        self.pgmode = PageMode(int(settings.value('pgmode', str(PageMode.PG_ALL))))
+        self.format = FileFormat(int(settings.value('format', FileFormat.FMT_PDF.value)))
+        self.format_censore = FileFormat(int(settings.value('format_censore', FileFormat.FMT_PDF_JPEG.value)))
+        self.pgmode = PageMode(int(settings.value('pgmode', PageMode.PG_ALL.value)))
 
         self.pgrange = settings.value('pgrange', '')
-        self.dpi = settings.value('dpi', '300')
-        self.quality = int(settings.value('quality', '75'))
+        self.dpi = settings.value('dpi', 300)
+        self.quality = int(settings.value('quality', 75))
         self.singles = self.value_to_bool(settings.value('singles', False))
 
         self.censore_fio = self.value_to_bool(settings.value('censoreFIO', True))
@@ -74,20 +75,20 @@ class SaveParams:  # pylint: disable=too-many-instance-attributes
     def save_params(self):
         """Сохранение настроек в реестре"""
         settings = QSettings(const.SETTINGS_ORGANIZATION, const.SETTINGS_APPLICATION)
-        settings.setValue('format', str(self.format.value))
-        settings.setValue('format_censore', str(self.format_censore.value))
-        settings.setValue('pgmode', str(self.pgmode.value))
+        settings.setValue('format', self.format.value)
+        settings.setValue('format_censore', self.format_censore.value)
+        settings.setValue('pgmode', self.pgmode.value)
 
         settings.setValue('pgrange', self.pgrange)
         settings.setValue('dpi', self.dpi)
-        settings.setValue('quality', str(self.quality))
-        settings.setValue('singles', str(self.singles))
+        settings.setValue('quality', self.quality)
+        settings.setValue('singles', self.singles)
 
-        settings.setValue('censoreFIO', str(self.censore_fio))
-        settings.setValue('censoreAddr', str(self.censore_addr))
-        settings.setValue('censorePost', str(self.censore_post))
-        settings.setValue('censoreIPU', str(self.censore_ipu))
-        settings.setValue('censoreQR', str(self.censore_qr))
+        settings.setValue('censoreFIO', self.censore_fio)
+        settings.setValue('censoreAddr', self.censore_addr)
+        settings.setValue('censorePost', self.censore_post)
+        settings.setValue('censoreIPU', self.censore_ipu)
+        settings.setValue('censoreQR', self.censore_qr)
 
     @staticmethod
     def value_to_bool(value) -> bool:
@@ -162,11 +163,27 @@ def get_apps_paths() -> tuple:
     # Загружаем настройки для запуска внешних приложений
     config = configparser.ConfigParser()
     try:
+        # Считываем INI файл
         config.read(os.path.join(os.path.dirname(__file__), const.SETTINGS_FILENAME))
-        return (
+
+        cmd_list = [
             config.get(const.SETTINGS_SECTION, 'tesseract_cmd', fallback=''),
             config.get(const.SETTINGS_SECTION, 'pdfviewer_cmd', fallback=''),
             config.get(const.SETTINGS_SECTION, 'xlseditor_cmd', fallback=''),
-        )
+        ]
+
+        # Проверяем файлы на существование. Если их нет, то меняем путь на пустую строку
+        for i, filename in enumerate(cmd_list):
+            if not filename:
+                continue
+            if not os.path.exists(filename):
+                cmd_list[i] = ''
+
+        # Если запустили под Windows, то подменяем пути pdfviewer и xlseditor спец. заглушкой
+        if platform.system() == 'Windows':
+            cmd_list[1] = cmd_list[2] = 'standard app'
+
+        return (cmd_list[0], cmd_list[1], cmd_list[2])
+
     except configparser.Error:
         return '', '', ''
