@@ -129,7 +129,7 @@ class SelectionRect:
         """
         return self.r
 
-    def normalize(self):
+    def get_normalized(self):
         """Нормализовать экранные размеры выделенной области"""
         # Косяк в PySide2
         # self.r = self.r.normalized()
@@ -162,7 +162,7 @@ class SelectionRect:
             eth_w (int): ширина эталлоной страницы
             eth_h (int): высота эталлоной страницы
         """
-        self.normalize()
+        self.get_normalized()
         self.r_f.setX(self.r.x() * eth_w / scr_w)
         self.r_f.setY(self.r.y() * eth_h / scr_h)
         self.r_f.setWidth((self.r.width() + 1) * eth_w / scr_w)
@@ -342,7 +342,7 @@ class SelectionRect:
         Returns:
             SelectionRect: этот объект
         """
-        self.normalize()
+        self.get_normalized()
         if shft:
             if self.r.width() + offs > 10:
                 self.r.setWidth(min(self.r.width() + offs, w - self.x1() - 1))
@@ -364,7 +364,7 @@ class SelectionRect:
         Returns:
             SelectionRect: этот объект
         """
-        self.normalize()
+        self.get_normalized()
         if shft:
             if self.r.height() + offs > 10:
                 self.r.setHeight(min(self.r.height() + offs, h - self.y1() - 1))
@@ -833,10 +833,11 @@ class SiaPdfView(QScrollArea):
         # Если курсор за пределами страницы, то ничего не делаем
         if not (0 <= pt.x() <= self._page_widget.width() and 0 <= pt.y() <= self._page_widget.height()):
             return
-        # Превращаем координаты мыши в fitz.Rect
-        rc = fitz.Rect(pt.x(), pt.y(), pt.x(), pt.y())
         # Корректируем их на _scale_factor
-        rc *= 3 / self._scale_factor
+        x = pt.x() * self.eth_w / self.scr_w
+        y = pt.y() * self.eth_h / self.scr_h
+        # Превращаем координаты мыши в fitz.Rect
+        rc = fitz.Rect(x, y, x, y)
         # Приводим к системе координат документа (с учетом поворота страницы)
         rc = rc / self._matrix
         # Эмитируем сигнал coords_text_emited
