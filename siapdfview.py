@@ -4,9 +4,9 @@
 Комплект виджетов для просмотра PDF-файла с возможностью выделения областей,
 их копирования в буфер и т.п.
 
-root_widget (SiaPdfView)
+root_widget (SiaPdfView: resizeEvent, keyPressEvent, wheelEvent)
    |
-   ---> board_widget (BoardWidget: mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent)
+   ---> board_widget (BoardWidget: mousePressEvent, mouseMoveEvent, mouseReleaseEvent)
            |
            ---> page_widget (PageWidget: paintEvent)
 
@@ -45,6 +45,7 @@ from PySide2.QtGui import QPen
 from PySide2.QtGui import QPixmap
 from PySide2.QtGui import QResizeEvent
 from PySide2.QtGui import QWheelEvent
+from PySide2.QtWidgets import QApplication
 from PySide2.QtWidgets import QDialog
 from PySide2.QtWidgets import QFrame
 from PySide2.QtWidgets import QHBoxLayout
@@ -537,6 +538,7 @@ class SiaPdfView(QScrollArea):
         self._page_widget.setBackgroundRole(QPalette.ColorRole.Base)
         self._page_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self._page_widget.setScaledContents(True)
+        self._page_widget.setStyleSheet('border:1px solid grey')
 
         # Передаем виджету-контейнеру ссылку на виджет страницы
         self._board_widget.set_page_widget(self._page_widget)
@@ -749,6 +751,7 @@ class SiaPdfView(QScrollArea):
 
             # Эмитируем сигнал rect_selected
             self.rect_selected.emit(False)
+            QApplication.processEvents()
 
     @property
     def doc(self):
@@ -1112,9 +1115,9 @@ class SiaPdfView(QScrollArea):
         self._page_widget.update()
         self.rect_selected.emit(False)
 
-    def scroll_contents_by(self, dx, dy):
-        super().scrollContentsBy(dx, dy)
-        self._page_widget.update()
+    # def _scroll_contents_by(self, dx, dy):
+    #     super().scrollContentsBy(dx, dy)
+    #     self._page_widget.update()
 
     def _scroll_point_to_point(self, src_pt: QPoint, dest_pt: QPoint):
         """Попытаться прокрутить рабочую область так, чтобы точка из системы координат изображения src_pt
@@ -1314,14 +1317,6 @@ class SiaPdfView(QScrollArea):
         if self._current_page != -1:
             self._set_sizes()
 
-    def wheelEvent(self, event: QWheelEvent):
-        """Обработчик прокрутки колесика мыши"""
-        # Если прокрутка с зажатыми Alt или Shift, то выполняем стандартные действия, иначе - игнорируем
-        if (event.modifiers() & Qt.KeyboardModifier.AltModifier) or (
-            event.modifiers() & Qt.KeyboardModifier.ShiftModifier
-        ):
-            super().wheelEvent(event)
-
     def keyPressEvent(self, event: QKeyEvent):
         """Обработчик нажатия клавиши клавиатуры"""
         key = event.key()
@@ -1454,6 +1449,61 @@ class SiaPdfView(QScrollArea):
 
         # Обновляем экран
         self._page_widget.update()
+
+    def wheelEvent(self, event: QWheelEvent):
+        """Обработчик прокрутки колесика мыши"""
+
+        # Alt переворачивает координату с Y на X
+        if event.modifiers() & Qt.KeyboardModifier.AltModifier:
+            # Занчение угла прокрутки
+            val = event.angleDelta().x()
+            delta = 500
+        else:
+            # Занчение угла прокрутки
+            val = event.angleDelta().y()
+            delta = 50
+
+        # Прокрутка с зажатым Ctrl/ом
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if val > 0:
+                # Увеличиваем масштаб
+                self.scale_image(1.25, event.pos())
+            elif val < 0:
+                # Уменьшаем масштаб
+                self.scale_image(0.8, event.pos())
+            return
+
+        # Если прокрутка с зажатыми Shift, то прокручиваем страницу по горизонтали
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            if val > 0:
+                # Прокручивание страницы влево
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
+            elif val < 0:
+                # Прокручивание страницы вправо
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + delta)
+            return
+
+        # Прокрутка без зажатых кнопок или с Alt
+        before = self.verticalScrollBar().value()
+        if val > 0:
+            # Прокручивание страницы вверх
+            self.verticalScrollBar().setValue(before - delta)
+            if before != self.verticalScrollBar().value() or self._current_page == 0:
+                return
+            # Перелистывание страницы назад
+            self.goto_prev_page()
+            # Перкручиваем на конец страницы
+            self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+        elif val < 0:
+            # Прокручивание страницы вниз
+            self.verticalScrollBar().setValue(before + delta)
+            if before != self.verticalScrollBar().value() or self._current_page == self.page_count - 1:
+                return
+            # Перелистывание страницы вперед
+            self.goto_next_page()
+            # Перкручиваем на начало страницы
+            self.verticalScrollBar().setValue(0)
+        return
 
 
 # noinspection PyProtectedMember,PyUnresolvedReferences
@@ -1698,42 +1748,6 @@ class BoardWidget(QWidget):
 
         # Вызываем обработчик родительского класса
         super().mouseReleaseEvent(event)
-
-    def wheelEvent(self, wheelEvent: QWheelEvent):
-        """Обработчик прокрутки колесика мыши"""
-
-        # Корневой объект
-        root_widget = self._root_widget
-
-        # Прокрутка с зажатым Ctrl/ом
-        if wheelEvent.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            # Точка wheelEvent.pos() - это положение курсора относительно левого верхнего угла контейнера
-            # containerWidget (этот угол может находиться за пределами видимости)
-            # Точка self.mapToParent(wheelEvent.pos()) - это положение курсора относительно левого верхнего угла
-            # всего виджета siaPdfView
-
-            val = wheelEvent.angleDelta().y()
-            if val > 0:
-                # Увеличиваем масштаб
-                root_widget.scale_image(1.25, self.mapToParent(wheelEvent.pos()))
-            elif val < 0:
-                # Уменьшаем масштаб
-                root_widget.scale_image(0.8, self.mapToParent(wheelEvent.pos()))
-            return
-
-        # Прокрутка без зажатых кнопок
-        if wheelEvent.modifiers() == Qt.KeyboardModifier.NoModifier:
-            val = wheelEvent.angleDelta().y()
-            if val > 0:
-                # Перелистывание страницы назад
-                root_widget.goto_prev_page()
-            elif val < 0:
-                # Перелистывание страницы вперед
-                root_widget.goto_next_page()
-            return
-
-        # Вызываем обработчик родительского класса для остальных ситуаций
-        self.parent().wheelEvent(wheelEvent)
 
 
 class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
