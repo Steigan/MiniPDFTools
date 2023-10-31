@@ -21,6 +21,7 @@ root_widget (SiaPdfView: resizeEvent, keyPressEvent, wheelEvent)
 """
 
 import logging
+import os
 import re
 
 import fitz
@@ -87,7 +88,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # настройка обработчика и форматировщика для logger2
-handler = logging.FileHandler('log.log')
+handler = logging.FileHandler(os.path.join(os.path.dirname(__file__), 'log.log'))
 handler.setFormatter(logging.Formatter('%(name)s %(asctime)s %(levelname)s %(message)s'))
 
 # добавление обработчика к логгеру

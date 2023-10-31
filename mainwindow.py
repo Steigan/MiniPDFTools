@@ -38,7 +38,7 @@ from tableanalize import parse_tables
 
 ABOUT_TEXT = """
 Mini PDF Tools - мини набор инструментов для просмотра и обработки файлов PDF.
-Версия от 27.10.2023 (c) 2023 Игорь Степаненков
+Версия от 31.10.2023 (c) 2023 Игорь Степаненков
 
 Используемые пакеты и библиотеки:
 PySide2 (c) 2022 The Qt Company Ltd.
@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # настройка обработчика и форматировщика для logger2
-handler = logging.FileHandler('log.log')
+handler = logging.FileHandler(os.path.join(os.path.dirname(__file__), 'log.log'))
 handler.setFormatter(logging.Formatter('%(name)s %(asctime)s %(levelname)s %(message)s'))
 
 # добавление обработчика к логгеру
