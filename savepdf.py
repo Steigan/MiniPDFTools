@@ -436,8 +436,9 @@ def _render_page(pdf_view: SiaPdfView, pno: int, param: SaveParams, mat, pixelat
 
     # Перебираем выделения
     for sel in sels:
-        # Трансформируем выделение в координаты изображения
-        r = pdf_view.get_selection_fitz_rect(pno, page.rotation, sel) * page.rotation_matrix * mat
+        # Трансформируем координаты выделения в координаты страницы pdf документа
+        # и приводим их к системе координат ранее подготовленного изображения
+        r = pdf_view.get_selection_fitz_rect(sel) * mat
         # Выделение в пределах страницы???
         if page_r.contains(r):
             # Замазываем участок

@@ -12,22 +12,28 @@ root_widget (SiaPdfView: resizeEvent, keyPressEvent, wheelEvent)
 
 Заметки
 =======
-* Версия от 05.04.2023 (c) 2023 **Igor Stepanenkov**
+* Версия от 10.11.2023 (c) 2023 **Igor Stepanenkov**
 
 Зависимости
 ===========
 * PySide2
 * PyMuPDF
+* Pillow
+* pytesseract
+* pyzbar
 """
 
 import logging
 import os
 import re
+from io import BytesIO
 
 import fitz
 import pytesseract
+from PIL import Image
 from PIL import ImageOps
-from PIL import ImageQt
+from PySide2.QtCore import QBuffer
+from PySide2.QtCore import QIODevice
 from PySide2.QtCore import QPoint
 from PySide2.QtCore import QRect
 from PySide2.QtCore import QRectF
@@ -63,24 +69,39 @@ from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
 
-# Участки выделенной области
-DIR_OUT = 0
-DIR_NW = 1
-DIR_N = 2
-DIR_NE = 3
-DIR_W = 4
-DIR_IN = 5
-DIR_E = 6
-DIR_SW = 7
-DIR_S = 8
-DIR_SE = 9
+# Участки выделенной области (в том числе "маркеры" для изменения размеров области)
+DIR_OUT = 0  # Вне границ области
+DIR_NW = 1  # Левый верхний угол
+DIR_N = 2  # Середина верхней стороны
+DIR_NE = 3  # Правый верхний угол
+DIR_W = 4  # Середина левой стороны
+DIR_IN = 5  # Внутри границ области
+DIR_E = 6  # Середина правой стороны
+DIR_SW = 7  # Левый нижний угол
+DIR_S = 8  # Середина нижней стороны
+DIR_SE = 9  # Правый нижний угол
 
-# Режимы перетаскивания выделенной области или ее участка мышью
-MODE_MOVE_NONE = 0
-MODE_MOVE_CORNER = 1
-MODE_MOVE_ALL = 2
-MODE_MOVE_VERT_BORDER = 3
-MODE_MOVE_HOR_BORDER = 4
+# Режимы перетаскивания мышью выделенной области или ее участка
+MODE_MOVE_NONE = 0  # Обычный режим просмотра - нет перетаскивания
+MODE_MOVE_CORNER = 1  # Перемещаем угол области
+MODE_MOVE_ALL = 2  # Перемещаем всю область
+MODE_MOVE_VERT_BORDER = 3  # Перемещаем вертикальную сторону (лево или право)
+MODE_MOVE_HOR_BORDER = 4  # Перемещаем горизонтальную сторону (верх или низ)
+
+# Действия с выделенной областью (для метода set_selection_point)
+ACT_FIX_FIRST_POINT = 1  # началось выделение области, оба угла фиксируются в точке нажатия мыши
+ACT_MOVE_SECOND_POINT = 2  # первый угол зафиксирован ранее, второй угол перемещается в точку курсора мыши
+ACT_FIX_ANCHOR_POINT = 3  # началось перемещение всей выделенной области, фиксируем положение мыши как "точку зацепа"
+ACT_MOVE_ANCHOR_POINT = 4  # выделенная область перемещается на дельту = (положение мыши - "точки зацепа"),
+#  фиксируем положение мыши как новую "точку зацепа"
+ACT_RESIZE_X = 5  # перемещается вертикальная сторона в положение мыши, противоположная сторона зафиксирована
+ACT_RESIZE_Y = 6  # перемещается горизонтальная сторона в положение мыши, противоположная сторона зафиксирована
+ACT_MOVE_MARKER = 10  # 11 - 19 - началось изменение размера выделенной области за маркер (угол или сторону),
+# идентификатор маркера = nm - ACT_MOVE_MARKER
+
+
+# Допуск в пикселях вокруг центров маркеров, используемых для изменения размера выделенной области
+MOUSE_TOLERANCE = 4
 
 
 # Настраиваем логирование
@@ -114,34 +135,94 @@ def show_info_msg_box(parent, title: str, text: str):
     m_msg_box.exec()
 
 
+def fromqimage(im):
+    """
+    Замена для ImageQt.fromqimage из PIL
+    """
+    buffer = QBuffer()
+    buffer.open(QIODevice.ReadWrite)
+    # preserve alpha channel with png
+    # otherwise ppm is more friendly with Image.open
+    if im.hasAlphaChannel():
+        im.save(buffer, "png")
+    else:
+        im.save(buffer, "ppm")
+
+    b = BytesIO()
+    b.write(buffer.data())
+    buffer.close()
+    b.seek(0)
+
+    return Image.open(b)
+
+
 class SelectionRect:
     """Класс для хранения данных о выделенных областях"""
 
     def __init__(self, pno: int = -1):
-        self.pno = pno
-        self.r = QRect(0, 0, 0, 0)
-        self.r_f = QRectF(0.0, 0.0, 0.0, 0.0)
-        self.enabled = True
+        self.pno = pno  # Номер страницы, к которой "привязана" область. Если -1,
+        # то это глобальная область (т.е. действует на всех страницах)
+        self.rect = QRect(0, 0, 0, 0)  # Экранные координаты выделенной области
+        self.rect_ref = QRectF(0.0, 0.0, 0.0, 0.0)  # Координаты выделенной области в "эталонном" масштабе
+        self.enabled = True  # Признак доступности области на просматриваемой странице (область не доступна,
+        # если выходит за границы страницы)
 
-    def get_rect(self) -> QRect:
-        """Получить экранный QRect выделенной области
+    @property
+    def x1(self) -> int:
+        """Координата X первого угла экранного QRect
 
         Returns:
-            QRect: выделенная область
+            int: координата X
         """
-        return self.r
+        return self.rect.x()
 
-    def get_normalized(self):
+    @property
+    def y1(self) -> int:
+        """Координата Y первого угла экранного QRect
+
+        Returns:
+            int: координата Y
+        """
+        return self.rect.y()
+
+    @property
+    def x2(self) -> int:
+        """Координата X второго угла экранного QRect
+
+        Returns:
+            int: координата X
+        """
+        return self.rect.x() + self.rect.width()
+
+    @property
+    def y2(self) -> int:
+        """Координата Y второго угла экранного QRect
+
+        Returns:
+            int: координата Y
+        """
+        return self.rect.y() + self.rect.height()
+
+    @property
+    def is_null(self) -> bool:
+        """Признак соответствия выделенной области минимально допустимому размеру
+
+        Returns:
+            bool: признак соответствия минимально допустимому размеру
+        """
+        return abs(self.rect_ref.width()) < 15 or abs(self.rect_ref.height()) < 15
+
+    def normalize(self):
         """Нормализовать экранные размеры выделенной области"""
         # Косяк в PySide2
         # self.r = self.r.normalized()
         # x1, y1, x2, y2 = self.r.getCoords()
 
         doit = False
-        x1 = self.x1()
-        x2 = self.x2()
-        y1 = self.y1()
-        y2 = self.y2()
+        x1 = self.x1
+        x2 = self.x2
+        y1 = self.y1
+        y2 = self.y2
 
         if x2 < x1:
             x1, x2 = x2, x1
@@ -152,63 +233,60 @@ class SelectionRect:
             doit = True
 
         if doit:
-            self.r.setRect(x1, y1, x2 - x1, y2 - y1)
+            self.rect.setRect(x1, y1, x2 - x1, y2 - y1)
 
-    def update_r_f(self, scr_w: int, scr_h: int, eth_w: int, eth_h: int):
+    def update_rect_ref(self, scr_w: int, scr_h: int, ref_w: int, ref_h: int):
         """Пересчитать "эталлонный" QRect в соответствии с указанным масштабом и
         текущими экранными размерами выделенной области
 
         Args:
             scr_w (int): экранная ширина страницы
             scr_h (int): экранная высота страницы
-            eth_w (int): ширина эталлоной страницы
-            eth_h (int): высота эталлоной страницы
+            ref_w (int): ширина эталлоной страницы
+            ref_h (int): высота эталлоной страницы
         """
-        self.get_normalized()
-        self.r_f.setX(self.r.x() * eth_w / scr_w)
-        self.r_f.setY(self.r.y() * eth_h / scr_h)
-        self.r_f.setWidth((self.r.width() + 1) * eth_w / scr_w)
-        self.r_f.setHeight((self.r.height() + 1) * eth_h / scr_h)
+        self.normalize()
+        self.rect_ref.setX(self.rect.x() * ref_w / scr_w)
+        self.rect_ref.setY(self.rect.y() * ref_h / scr_h)
+        self.rect_ref.setWidth((self.rect.width() + 1) * ref_w / scr_w)
+        self.rect_ref.setHeight((self.rect.height() + 1) * ref_h / scr_h)
 
-    def update_r(
-        self, scr_w: int, scr_h: int, eth_w: int, eth_h: int, check_size=False
-    ):  # pylint: disable=too-many-arguments
+    def update_rect(self, scr_w: int, scr_h: int, ref_w: int, ref_h: int):  # pylint: disable=too-many-arguments
         """Пересчитать экранный QRect в соответствии с указанным масштабом и
         "эталлонными" размерами выделенной области
 
         Args:
             scr_w (int): экранная ширина страницы
             scr_h (int): экранная высота страницы
-            eth_w (int): ширина эталлоной страницы
-            eth_h (int): высота эталлоной страницы
-            check_size (int): проверить размеры области на вместиомость на странице
+            ref_w (int): ширина эталлоной страницы
+            ref_h (int): высота эталлоной страницы
         """
-        if check_size:
-            self.enabled = QRectF(0, 0, eth_w, eth_h).contains(self.r_f)
+        # Проверяем размеры области на вместимость на странице
+        self.enabled = QRectF(0, 0, ref_w, ref_h).contains(self.rect_ref)
 
-        self.r.setX(round(self.r_f.x() * scr_w / eth_w))
-        self.r.setY(round(self.r_f.y() * scr_h / eth_h))
-        self.r.setWidth(round((self.r_f.x() + self.r_f.width()) * scr_w / eth_w) - self.r.x() - 1)
-        self.r.setHeight(round((self.r_f.y() + self.r_f.height()) * scr_h / eth_h) - self.r.y() - 1)
+        self.rect.setX(round(self.rect_ref.x() * scr_w / ref_w))
+        self.rect.setY(round(self.rect_ref.y() * scr_h / ref_h))
+        self.rect.setWidth(round((self.rect_ref.x() + self.rect_ref.width()) * scr_w / ref_w) - self.rect.x() - 1)
+        self.rect.setHeight(round((self.rect_ref.y() + self.rect_ref.height()) * scr_h / ref_h) - self.rect.y() - 1)
 
-    def get_scaled_rect(self, new_w: int, new_h: int, eth_w: int, eth_h: int) -> QRect:
+    def get_scaled_rect(self, new_w: int, new_h: int, ref_w: int, ref_h: int) -> QRect:
         """Сформировать QRect в соответствии с указанным масштабом и "эталлонными"
         размерами выделенной области
 
         Args:
             new_w (int): новая ширина страницы
             new_h (int): новая высота страницы
-            eth_w (int): ширина эталлоной страницы
-            eth_h (int): высота эталлоной страницы
+            ref_w (int): ширина эталлоной страницы
+            ref_h (int): высота эталлоной страницы
 
         Returns:
             QRect: масштабированная прямоугольная область
         """
         m_r = QRect()
-        m_r.setX(round(self.r_f.x() * new_w / eth_w))
-        m_r.setY(round(self.r_f.y() * new_h / eth_h))
-        m_r.setWidth(round(self.r_f.width() * new_w / eth_w))
-        m_r.setHeight(round(self.r_f.height() * new_h / eth_h))
+        m_r.setX(round(self.rect_ref.x() * new_w / ref_w))
+        m_r.setY(round(self.rect_ref.y() * new_h / ref_h))
+        m_r.setWidth(round(self.rect_ref.width() * new_w / ref_w))
+        m_r.setHeight(round(self.rect_ref.height() * new_h / ref_h))
         return m_r
 
     def set_x1y1_x2y2(self, pt1: QPoint, pt2: QPoint):
@@ -219,58 +297,18 @@ class SelectionRect:
             pt1 (QPoint): точка первого угла прямоугольной области
             pt2 (QPoint): точка второго (диагонально противоположного) угла прямоугольной области
         """
-        self.r.setRect(pt1.x(), pt1.y(), pt2.x() - pt1.x(), pt2.y() - pt1.y())
+        self.rect.setRect(pt1.x(), pt1.y(), pt2.x() - pt1.x(), pt2.y() - pt1.y())
 
-    def x1(self) -> int:
-        """Получить координату X первого угла экранного QRect
-
-        Returns:
-            int: координата X
-        """
-        return self.r.x()
-
-    def y1(self) -> int:
-        """Получить координату Y первого угла экранного QRect
-
-        Returns:
-            int: координата Y
-        """
-        return self.r.y()
-
-    def x2(self) -> int:
-        """Получить координату X второго угла экранного QRect
-
-        Returns:
-            int: координата X
-        """
-        return self.r.x() + self.r.width()
-
-    def y2(self) -> int:
-        """Получить координату Y второго угла экранного QRect
-
-        Returns:
-            int: координата Y
-        """
-        return self.r.y() + self.r.height()
-
-    def is_null(self) -> bool:
-        """Проверить выделенную область на соответствие минимальному размеру
-
-        Returns:
-            bool: признак соответствия минимально допустимому размеру
-        """
-        return abs(self.r_f.width()) < 15 or abs(self.r_f.height()) < 15
-
-    def dir_rect(self, pt: QPoint) -> int:
+    def get_dir_rect(self, pt: QPoint) -> int:
         """Получить номер угла выделенной области, находящийся в зоне "досягаемости"
         указанной точки (1, 3, 7, 9), или идентификатор иного участка области/экрана
-        (5 - внутри области, 0 - за пределами области или область disabled)
+        (5 - внутри области, 0 (DIR_OUT) - за пределами области или область disabled)
 
-        1 - 2 - 3
+        1 - 2 - 3           DIR_NW - DIR_N -  DIR_NE
 
-        4 - 5 - 6
+        4 - 5 - 6           DIR_W -  DIR_IN - DIR_E
 
-        7 - 8 - 9
+        7 - 8 - 9           DIR_SW - DIR_S -  DIR_SE
 
         Args:
             pt (QPoint): точка (например, положение указателя мыши)
@@ -278,101 +316,141 @@ class SelectionRect:
         Returns:
             int: идентификатор угла выделенной области или иного участка области/экрана
         """
-        # self.normalize()
+
+        # Если область неактивна (выходит за пределы страницы), то не реагируем на нее
         if not self.enabled:
             return DIR_OUT
-        r = self.r
-        xc = (self.x1() + self.x2()) // 2
-        yc = (self.y1() + self.y2()) // 2
-        offs = 4
-        if r.x() - offs < pt.x() < r.x() + offs:  # левая сторона
-            if r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
+
+        # Используем экранные координаты прямоугольной области
+        r = self.rect
+
+        # Определяем координаты центра центр
+        x_center = (self.x1 + self.x2) // 2
+        y_center = (self.y1 + self.y2) // 2
+
+        if r.x() - MOUSE_TOLERANCE < pt.x() < r.x() + MOUSE_TOLERANCE:  # левая сторона
+            if r.y() - MOUSE_TOLERANCE < pt.y() < r.y() + MOUSE_TOLERANCE:  # верхняя сторона
                 return DIR_NW
-            if r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
+            if r.bottom() - MOUSE_TOLERANCE + 1 < pt.y() < r.bottom() + MOUSE_TOLERANCE + 1:  # нижняя сторона
                 return DIR_SW
-            if yc - offs < pt.y() < yc + offs:  # середина по вертикали
+            if y_center - MOUSE_TOLERANCE < pt.y() < y_center + MOUSE_TOLERANCE:  # середина по вертикали
                 return DIR_W
-        elif r.right() - offs + 1 < pt.x() < r.right() + offs + 1:  # правая сторона
-            if r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
+
+        elif r.right() - MOUSE_TOLERANCE + 1 < pt.x() < r.right() + MOUSE_TOLERANCE + 1:  # правая сторона
+            if r.y() - MOUSE_TOLERANCE < pt.y() < r.y() + MOUSE_TOLERANCE:  # верхняя сторона
                 return DIR_NE
-            if r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
+            if r.bottom() - MOUSE_TOLERANCE + 1 < pt.y() < r.bottom() + MOUSE_TOLERANCE + 1:  # нижняя сторона
                 return DIR_SE
-            if yc - offs < pt.y() < yc + offs:  # середина по вертикали
+            if y_center - MOUSE_TOLERANCE < pt.y() < y_center + MOUSE_TOLERANCE:  # середина по вертикали
                 return DIR_E
-        elif r.y() - offs < pt.y() < r.y() + offs:  # верхняя сторона
-            if xc - offs < pt.x() < xc + offs:  # середина по горизонтали
+
+        elif r.y() - MOUSE_TOLERANCE < pt.y() < r.y() + MOUSE_TOLERANCE:  # верхняя сторона
+            if x_center - MOUSE_TOLERANCE < pt.x() < x_center + MOUSE_TOLERANCE:  # середина по горизонтали
                 return DIR_N
-        elif r.bottom() - offs + 1 < pt.y() < r.bottom() + offs + 1:  # нижняя сторона
-            if xc - offs < pt.x() < xc + offs:  # середина по горизонтали
+
+        elif r.bottom() - MOUSE_TOLERANCE + 1 < pt.y() < r.bottom() + MOUSE_TOLERANCE + 1:  # нижняя сторона
+            if x_center - MOUSE_TOLERANCE < pt.x() < x_center + MOUSE_TOLERANCE:  # середина по горизонтали
                 return DIR_S
 
         if r.contains(pt):
             return DIR_IN
         return DIR_OUT
 
-    def adjust_position(self, w: int, h: int):
+    def adjust_position(self, page_width: int, page_height: int):
         """Проверить, укладывается ли выделенная область в размеры страницы, и сдвинуть ее
         обратно на страницу, если область вышла за края
 
         Args:
-            w (int): ширина страницы
-            h (int): высота страницы
+            page_width (int): ширина страницы
+            page_height (int): высота страницы
 
         Returns:
-            int, int: смещения по X и Y из-за перемещения области обратно на страницу
+            int, int: величина "вылета" за пределы страницы по X и Y
         """
-        dx = min(self.x1(), self.x2(), 0)
+        # Ищем минимальный х, ушедший в минус
+        dx = min(self.x1, self.x2, 0)
+        # Если в минус (влево) по x не уходили,
         if not dx:
-            dx = max(self.x1() - (w - 1), self.x2() - (w - 1), 0)
-        dy = min(self.y1(), self.y2(), 0)
+            # то проверяем выход за пределы страницы вправо - ищем максимальный лишний плюс
+            dx = max(self.x1 - (page_width - 1), self.x2 - (page_width - 1), 0)
+
+        # Ищем минимальный y, ушедший в минус
+        dy = min(self.y1, self.y2, 0)
+        # Если в минус (вверх) по y не уходили,
         if not dy:
-            dy = max(self.y1() - (h - 1), self.y2() - (h - 1), 0)
+            # то проверяем выход за пределы страницы вниз - ищем максимальный лишний плюс
+            dy = max(self.y1 - (page_height - 1), self.y2 - (page_height - 1), 0)
+
+        # Если ушли запределы страницы по x или y
         if dx or dy:
-            self.r.adjust(-dx, -dy, -dx, -dy)
+            # то возвращаем прямоугольник на страницу
+            self.rect.adjust(-dx, -dy, -dx, -dy)
+
+        # Возвращаем величину предотвращенного "вылета" за пределы страницы по X и Y
         return dx, dy
 
-    def shift_x(self, offs: int, shft: bool, w: int, h: int):
+    def shift_x(self, offset: int, is_scale: bool, page_width: int, page_height: int):
         """Сдвинуть выделенную область или изменить ее размер по горизонтали на указанное число пикселей
         в пределах страницы
 
         Args:
-            offs (int): количество пикселей
-            shft (bool): признак изменения размера области, иначе - перемещение
-            w (int): ширина страницы
-            h (int): высота страницы
+            offset (int): количество пикселей
+            is_scale (bool): признак изменения размера области, иначе - перемещение
+            page_width (int): ширина страницы
+            page_height (int): высота страницы
 
         Returns:
             SelectionRect: этот объект
         """
-        self.get_normalized()
-        if shft:
-            if self.r.width() + offs > 10:
-                self.r.setWidth(min(self.r.width() + offs, w - self.x1() - 1))
-        else:
-            self.r.moveLeft(self.r.left() + offs)
-            self.adjust_position(w, h)
+        # Нормализуем координаты
+        self.normalize()
+        if not is_scale:  # перемещение
+            # Сдвигаем весь прямоугольник за левую сторону на величину смещения
+            self.rect.moveLeft(self.rect.left() + offset)
+            # Проверяем, укладывается ли теперь смещенная выделенная область в размеры страницы,
+            # если нет - немного сдвигаем обратно, чтобы вернуть на страницу
+            self.adjust_position(page_width, page_height)
+            # Возвращаем себя
+            return self
+
+        # изменение размера
+        # меняем размер только в том случае, если новый не будет меньше 11 пикселей
+        if self.rect.width() + offset > 10:
+            # устанавливаем новую ширину, ограничив ее размерами страницы
+            self.rect.setWidth(min(self.rect.width() + offset, page_width - self.x1 - 1))
+        # Возвращаем себя
         return self
 
-    def shift_y(self, offs: int, shft, w: int, h: int):
+    def shift_y(self, offset: int, is_scale: bool, page_width: int, page_height: int):
         """Сдвинуть выделенную область или изменить ее размер по вертикали на указанное число пикселей
         в пределах страницы
 
         Args:
             offs (int): количество пикселей
-            shft (bool): признак изменения размера области, иначе - перемещение
-            w (int): ширина страницы
-            h (int): высота страницы
+            is_scale (bool): признак изменения размера области, иначе - перемещение
+            page_width (int): ширина страницы
+            page_height (int): высота страницы
 
         Returns:
             SelectionRect: этот объект
         """
-        self.get_normalized()
-        if shft:
-            if self.r.height() + offs > 10:
-                self.r.setHeight(min(self.r.height() + offs, h - self.y1() - 1))
-        else:
-            self.r.moveTop(self.r.top() + offs)
-            self.adjust_position(w, h)
+        # Нормализуем координаты
+        self.normalize()
+        if not is_scale:  # перемещение
+            # Сдвигаем весь прямоугольник за "верх" на величину смещения
+            self.rect.moveTop(self.rect.top() + offset)
+            # Проверяем, укладывается ли теперь смещенная выделенная область в размеры страницы,
+            # если нет - немного сдвигаем обратно, чтобы вернуть на страницу
+            self.adjust_position(page_width, page_height)
+            # Возвращаем себя
+            return self
+
+        # изменение размера
+        # меняем размер только в том случае, если новый не будет меньше 11 пикселей
+        if self.rect.height() + offset > 10:
+            # устанавливаем новую высоту, ограничив ее размерами страницы
+            self.rect.setHeight(min(self.rect.height() + offset, page_height - self.y1 - 1))
+        # Возвращаем себя
         return self
 
 
@@ -393,7 +471,7 @@ class PageNumberSpinBox(QSpinBox):
 
     def keyPressEvent(self, event: QKeyEvent):
         """Обработчик нажатий клавиш"""
-        # Отфильтровываем PgUp и PgDn
+        # Игнорируем PgUp и PgDn, чтобы не было смешения со сменой страниц
         if not event.key() in (16777238, 16777239):
             super().keyPressEvent(event)
 
@@ -402,12 +480,14 @@ class PageNumberSpinBox(QSpinBox):
 class ZoomSlider(QSlider):
     """Виджет слайдера для выбора масштаба просмотра страницы"""
 
-    zoomSliderDoubleClicked = Signal()
+    zoomSliderDoubleClicked = Signal()  # Сигнал при двойном клике мыши
 
     def __init__(self, parent):
         super().__init__(parent)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):  # pylint: disable=unused-argument
+        """Обработчик двойного клика мыши"""
+        # Эмитируем сигнал zoomSliderDoubleClicked
         self.zoomSliderDoubleClicked.emit()
 
 
@@ -415,17 +495,22 @@ class ZoomSlider(QSlider):
 class ZoomSelector(QWidget):
     """Виджет выбора масштаба просмотра страницы (на основе слайдера)"""
 
-    zoom_factor_changed = Signal(float)
+    zoom_factor_changed = Signal(float)  # Сигнал при изменении выбранного масштаба
 
     def __init__(self, parent):
         super().__init__(parent)
+        # Устанавливаем фиксированную ширину виджета
         self.setFixedWidth(190)
 
-        self.passemit = False
+        # По умолчанию будем эмитировать zoom_factor_changed при изменении масштаба
+        self.is_emit = True
 
+        # Создаем и настраиваем горизонтальный layout
         self.horizontal_layout = QHBoxLayout(self)
         self.horizontal_layout.setSpacing(5)
         self.horizontal_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+
+        # Создаем виджет ZoomSlider и настраиваем его
         self.slider = ZoomSlider(self)
         self.slider.setFixedWidth(120)
         self.slider.setMinimum(20)
@@ -433,39 +518,56 @@ class ZoomSelector(QWidget):
         self.slider.setValue(100)
         self.slider.setOrientation(Qt.Horizontal)
 
+        # Создаем виджет QLineEdit и настраиваем его
         self.lbl_value = QLineEdit(self)
         self.lbl_value.setFixedWidth(45)
         self.lbl_value.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         self.lbl_value.setText("100%")
         self.lbl_value.setReadOnly(True)
+
+        # Добавляем оба виджета в layout
         self.horizontal_layout.addWidget(self.slider)
         self.horizontal_layout.addWidget(self.lbl_value)
 
+        # Соединяем сигнал слайдера valueChanged с соответствующим обработчиком
         self.slider.valueChanged.connect(self.value_changed)
+        # Соединяем сигнал слайдера zoomSliderDoubleClicked с соответствующим обработчиком
         self.slider.zoomSliderDoubleClicked.connect(self.reset)
+        # Включаем доступность элементов виджета
         self.lbl_value.setEnabled(False)
         self.slider.setEnabled(False)
 
     def set_zoom_factor(self, zoom_factor: float):
-        self.passemit = True
+        """Установка масштаба извне"""
+        # Отключаем эмитирование сигнала zoom_factor_changed на это изменение
+        self.is_emit = False
+        # Устанавливаем новое значение масштаба
         self.slider.setValue(int(zoom_factor * 100))
 
     def reset(self):
+        """Сброс масштаба в 100%"""
         self.slider.setValue(100)
+        # Устанавливаем новое значение масштаба
         self.value_changed(100)
 
     def value_changed(self, value):
+        """Обработчик изменения значения масштаба"""
+        # Меняем текст с масштабом в процентах
         self.lbl_value.setText(f"{value}%")
-        if not self.passemit:
+        # Если нужно эмитировать zoom_factor_changed, то делаем это
+        if self.is_emit:
             self.zoom_factor_changed.emit(value / 100.0)
-        self.passemit = False
+        # По умолчанию будем эмитировать zoom_factor_changed при дальнейших изменениях
+        self.is_emit = True
 
-    def setDisabled(self, fl: bool):
-        self.setEnabled(not fl)
+    def setDisabled(self, is_disabled: bool):
+        """Устанавливаем элементы виджета недоступными в зависимости от переданного флага"""
+        self.setEnabled(not is_disabled)
 
-    def setEnabled(self, fl: bool):
-        self.lbl_value.setEnabled(fl)
-        self.slider.setEnabled(fl)
+    def setEnabled(self, is_enabled: bool):
+        """Устанавливаем элементы виджета доступными в зависимости от переданного флага"""
+        self.lbl_value.setEnabled(is_enabled)
+        self.slider.setEnabled(is_enabled)
 
 
 ###########################################################################
@@ -477,42 +579,42 @@ class ZoomSelector(QWidget):
 class SiaPdfView(QScrollArea):
     """Виджет-основная прокручиваемая область просмотра"""
 
-    current_page_changed = Signal(int)
-    zoom_factor_changed = Signal(float)
-    rect_selected = Signal(bool)
-    scroll_requested = Signal(QPoint, QPoint)
-    coords_text_emited = Signal(str, int)
+    current_page_changed = Signal(int)  # Сигнал при смене страницы
+    zoom_factor_changed = Signal(float)  # Сигнал при изменении масштаба
+    rect_selected = Signal(bool)  # Сигнал при изменении фокуса на выделенной области
+    scroll_requested = Signal(QPoint, QPoint)  # Сигнал о необходимости прокрутки экрана при изменении масштаба
+    coords_text_emited = Signal(str, int)  # Сигнал при изменении координат курсора при удерживаемом Alt/е
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._doc = None
+        self._doc = None  # текущий документ PDF (объект fitz)
         self._current_filename = ''  # Имя текущего файла
         self._is_real_file = False  # Это настоящий файл (или виртуальный/новый)
-        self._current_page = -1
-        self._psw = ''
-        self._scale_factor = 1.0
-        self._dpi = 300
-
+        self._current_page = -1  # Текущая страница документа
+        self._psw = ''  # Пароль к зашифрованному документу PDF
+        self._scale_factor = 1.0  # Текущий масштаб страницы
         ppi = 96
-        self.dpi = ppi * 3
-        zoom = self.dpi / 72
-        self._matrix = fitz.Matrix(zoom, zoom)
+        self._dpi = ppi * 3  # DPI, используемый для рендеринга страницы документа
 
-        self.scr_w = 0
-        self.scr_h = 0
-        self.eth_w = 0
-        self.eth_h = 0
+        zoom = self._dpi / 72
+        self._matrix = fitz.Matrix(zoom, zoom)  # Матрица для рендеринга страницы документа
 
-        self.selection_point1 = QPoint(0, 0)
-        self.selection_point2 = QPoint(0, 0)
-        self.move_point = QPoint(0, 0)
+        self.scr_w = 0  # Экранная ширина текущей страницы документа
+        self.scr_h = 0  # Экранная высота текущей страницы документа
+        self.ref_w = 0  # Эталонная ширина текущей страницы документа (для масштаба х3)
+        self.ref_h = 0  # Эталонная высота текущей страницы документа (для масштаба х3)
 
-        self.selected_rect = -1
-        self.selections_max = 10000
-        self.selections: list[SelectionRect] = []
-        self.selections_all: list[SelectionRect] = []
+        self.selection_point1 = QPoint(0, 0)  # Координаты первого угла выделяемой области
+        self.selection_point2 = QPoint(0, 0)  # Координаты второго угла выделяемой области
+        self.move_point = QPoint(0, 0)  # Координаты реперной точки при изменении масштаба страницы (пытаемся
+        # сохранить положение страницы неподвижным в этой точке посме смены масштаба)
 
-        self.move_mode = MODE_MOVE_NONE
+        self.selected_rect = -1  # Индекс текущей выделенной области
+        self.selections_max = 10000  # Максимальное количество выделенных областей
+        self.selections: list[SelectionRect] = []  # Список выделенных областей на текущей странице
+        self.selections_all: list[SelectionRect] = []  # Общий список выделенных областей на всех страницах
+
+        self.move_mode = MODE_MOVE_NONE  # Текущий режим передвижения курсора мыши
 
         # Настраиваем корневой виджет (серый фон, без рамки, постоянная видимость скроллбаров, "фокусируемость")
         self.setBackgroundRole(QPalette.ColorRole.Dark)
@@ -539,7 +641,7 @@ class SiaPdfView(QScrollArea):
         self._page_widget.setBackgroundRole(QPalette.ColorRole.Base)
         self._page_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self._page_widget.setScaledContents(True)
-        self._page_widget.setStyleSheet('border:1px solid grey')
+        # self._page_widget.setStyleSheet('border:1px solid grey')  -- съедает полезное пространство...
 
         # Передаем виджету-контейнеру ссылку на виджет страницы
         self._board_widget.set_page_widget(self._page_widget)
@@ -838,8 +940,8 @@ class SiaPdfView(QScrollArea):
         if not (0 <= pt.x() <= self._page_widget.width() and 0 <= pt.y() <= self._page_widget.height()):
             return
         # Корректируем их на _scale_factor
-        x = pt.x() * self.eth_w / self.scr_w
-        y = pt.y() * self.eth_h / self.scr_h
+        x = pt.x() * self.ref_w / self.scr_w
+        y = pt.y() * self.ref_h / self.scr_h
         # Превращаем координаты мыши в fitz.Rect
         rc = fitz.Rect(x, y, x, y)
         # Приводим к системе координат документа (с учетом поворота страницы)
@@ -881,7 +983,7 @@ class SiaPdfView(QScrollArea):
             return
 
         # Получаем координаты выделения
-        r = self.selections[self.selected_rect].r_f
+        r = self.selections[self.selected_rect].rect_ref
         rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
         # Трансформируем их в систему координат документа
         rc = rc / self._matrix
@@ -914,7 +1016,7 @@ class SiaPdfView(QScrollArea):
         # Получаем координаты выделения
         r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
         # Вырезаем выделенную область из изображения страницы
-        img = ImageQt.fromqimage(img.copy(r))
+        img = fromqimage(img.copy(r))
         # Распознаем
         recttext = pytesseract.image_to_string(img, lang='rus+eng')
         # Если is_trim == True, то убираем из текста лишние "пробельные" символы
@@ -941,7 +1043,7 @@ class SiaPdfView(QScrollArea):
         # Получаем координаты выделения
         r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
         # Вырезаем выделенную область из изображения страницы
-        img = ImageQt.fromqimage(img.copy(r))
+        img = fromqimage(img.copy(r))
         # Распознаем QR коды
         decocde_qr = decode(img, [ZBarSymbol.QRCODE])
         # Если коды не найдены, пробуем инвертировать изображение
@@ -993,7 +1095,7 @@ class SiaPdfView(QScrollArea):
             pno = self._current_page
 
             # Сортируем список выделений
-            sels.sort(key=lambda x: (x.pno, x.r_f.y(), x.r_f.x()))
+            sels.sort(key=lambda x: (x.pno, x.rect_ref.y(), x.rect_ref.x()))
 
             # Обходим все выделенные области
             for i, s in enumerate(sels):
@@ -1004,7 +1106,7 @@ class SiaPdfView(QScrollArea):
 
                 # Получаем координаты области и переводим их в систему координат страницы
                 # документа (с учетом ее поворота!!!)
-                r = s.r_f
+                r = s.rect_ref
                 rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
                 rc = rc / self._matrix
 
@@ -1022,6 +1124,55 @@ class SiaPdfView(QScrollArea):
         QGuiApplication.clipboard().setText(recttext)
         show_info_msg_box(self, 'Информация о выделенных участках', recttext)
 
+    def get_selection_fitz_rect(self, sel: SelectionRect):
+        """Трансформируем координаты выделения в координаты страницы pdf документа
+
+        Args:
+            sel (SelectionRect): выделение
+
+        Returns:
+            fitz rect: прямоугольная область fitz
+        """
+        return (
+            fitz.Rect(
+                sel.rect_ref.x(),
+                sel.rect_ref.y(),
+                sel.rect_ref.x() + sel.rect_ref.width(),
+                sel.rect_ref.y() + sel.rect_ref.height(),
+            )
+            / self._matrix
+        )
+
+    def add_selection(self, pno: int, rect):
+        """Добавить выделенную область
+
+        Args:
+            pno (int): номер страницы
+            rect (_type_): прямоугольная область в экранной системе координат,
+                           которая будет добавлена в качестве выделенной области
+        """
+        # Создаем новый объект SelectionRect
+        sel = SelectionRect(pno)
+        # Трансформируем экранные координаты в "эталонные"
+        rotated_rect = (rect * self._doc[pno].rotation_matrix) * self._matrix
+        # Нормализируем углы прямоугольника
+        rotated_rect.normalize()
+        # Устанавливаем "эталонные" координаты выделенной области
+        sel.rect_ref.setCoords(rotated_rect.x0, rotated_rect.y0, rotated_rect.x1, rotated_rect.y1)
+        # Добавляем объект в общий список выделений на всех страницах
+        self.selections_all.append(sel)
+
+        # Если добавляемое выделение не находится на текущей странице и не глобальное, то выходим
+        if pno != self._current_page and pno != -1:
+            return
+
+        # Приводим "эталонные" координаты в экранные с проверкой на вместимость в страницу
+        sel.update_rect(self.scr_w, self.scr_h, self.ref_w, self.ref_h)
+        # Добавляем объект в список выделений текущей страницы
+        self.selections.append(sel)
+        # Обновляем экран
+        self._page_widget.update()
+
     def switch_rect_mode(self):
         """Переключить признак глобальности выделения"""
         # Если нет текущей страницы или нет текущего выделения, то сразу выходим
@@ -1036,276 +1187,411 @@ class SiaPdfView(QScrollArea):
         # Обновляем экран
         self._page_widget.update()
 
-    def rotate_pages(self, n_dir: int, fl_all: bool):
-        if self._current_page > -1:
-            if fl_all:
-                pno = 0
-                pno_end = len(self._doc)
-            else:
-                pno = self._current_page
-                pno_end = pno + 1
+    def rotate_pages(self, rotation_dir: int, is_all: bool):
+        """Вращение страницы/всех страниц
 
-            while pno < pno_end:
-                src_rot_mat = self._doc[pno].rotation_matrix * self._matrix
-                self._doc[pno].set_rotation((self._doc[pno].rotation + (0, 270, 90, 180)[n_dir]) % 360)
-                dst_rot_mat = self._doc[pno].rotation_matrix * self._matrix
-                for sel in self.selections_all:
-                    # sel = selectionRect()
-                    if sel.pno == pno or (sel.pno == -1 and (pno == self._current_page or fl_all)):
-                        r = sel.r_f
-                        rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
-                        rc = (rc / src_rot_mat) * dst_rot_mat
-                        r.setRect(rc.x0, rc.y0, rc.x1 - rc.x0, rc.y1 - rc.y0)
-                pno += 1
+        Args:
+            rotation_dir (int): индекс значения переворота (0 - нет вращения,
+                                1 - против часовой на 90, 2 - по часовой на 90,
+                                3 - перевернуть на 180)
+            is_all (bool): повернуть все страницы, иначе - только текущую
+        """
+        # Если нет текущей страницы, то сразу выходим
+        if self._current_page == -1:
+            return
 
+        # Задаем индексы первой и последней страницы для переворота
+        if is_all:
+            pno = 0
+            pno_end = len(self._doc) - 1
+        else:
             pno = self._current_page
-            self._current_page = -1
-            self._show_page(pno)
+            pno_end = pno
 
-    def add_selection(self, pno, r):
-        sel = SelectionRect(pno)
-        rot_r = (r * self._doc[pno].rotation_matrix) * self._matrix
-        rot_r.normalize()
-        sel.r_f.setCoords(rot_r.x0, rot_r.y0, rot_r.x1, rot_r.y1)
-        self.selections_all.append(sel)
-        if pno == self._current_page:
-            sel.update_r(self.scr_w, self.scr_h, self.eth_w, self.eth_h)
-            self.selections.append(sel)
-            self._page_widget.update()
+        # Переворачиваем все страницы в цикле
+        while pno <= pno_end:
+            # Сохраняем матрицу рендеринга для старой ориентации страницы
+            src_rot_mat = self._doc[pno].rotation_matrix * self._matrix
+            # Поворачиваем страницу документа в объекте fitz
+            self._doc[pno].set_rotation((self._doc[pno].rotation + (0, 270, 90, 180)[rotation_dir]) % 360)
+            # Сохраняем матрицу рендеринга для новой ориентации страницы
+            dst_rot_mat = self._doc[pno].rotation_matrix * self._matrix
+            # В цикле трансформируем все выделения, которые были привязаны к странице, в т.ч. "глобальные"
+            for sel in self.selections_all:
+                # Глобальные выделения трансформируются только один раз - на текущей странице
+                if sel.pno == pno or (sel.pno == -1 and pno == self._current_page):
+                    # Получаем старые "эталонные" координаты выделения в fitz rect
+                    r = sel.rect_ref
+                    rc = fitz.Rect(r.x(), r.y(), r.x() + r.width(), r.y() + r.height())
+                    # Трансформируем координаты, применяя старую и новую матрицы
+                    rc = (rc / src_rot_mat) * dst_rot_mat
+                    # Сохраняем новые "эталонные" координаты выделения
+                    r.setRect(rc.x0, rc.y0, rc.x1 - rc.x0, rc.y1 - rc.y0)
+            # Индекс следующей страницы
+            pno += 1
 
-    def get_selection_fitz_rect(self, pno, old_rot, sel: SelectionRect):
-        cur_rot = self._doc[pno].rotation
-        if cur_rot != old_rot:
-            self._doc[pno].set_rotation(old_rot)
-        r = fitz.Rect(sel.r_f.x(), sel.r_f.y(), sel.r_f.x() + sel.r_f.width(), sel.r_f.y() + sel.r_f.height())
-        r = (r / self._matrix) / self._doc[pno].rotation_matrix
-        if cur_rot != old_rot:
-            self._doc[pno].set_rotation(cur_rot)
-        return r
+        # Обновляем отображение страницы
+        self._show_page(self._current_page, True)
 
     def select_all(self):
-        if self._current_page > -1:
-            max_rect = QRectF(0, 0, self.eth_w, self.eth_h)
-            for sel in self.selections:
-                if sel.r_f == max_rect:
-                    self.selected_rect = self.selections.index(sel)
-                    break
-            else:
-                self.selected_rect = len(self.selections)
-                new_sel = SelectionRect(self._current_page)
-                new_sel.r_f = max_rect
-                new_sel.update_r(self.scr_w, self.scr_h, self.eth_w, self.eth_h)
+        """Создать выделение всей страницы"""
+        # Если нет текущей страницы, то сразу выходим
+        if self._current_page == -1:
+            return
 
-                self.selections.append(new_sel)
-                self.selections_all.append(new_sel)
+        # Формируем прямоугольную область, соответствующую всей странице
+        max_rect = QRectF(0, 0, self.ref_w, self.ref_h)
+        # В цикле проверяем все уже выделенные области на текущей странице
+        for sel in self.selections:
+            # Если такая область уже выделена, то фокусируемся на ней и выходим из цикла
+            if sel.rect_ref == max_rect:
+                self.selected_rect = self.selections.index(sel)
+                break
+        else:
+            # "Фокусируемся" на новой выделенной области
+            self.selected_rect = len(self.selections)
+            # Создаем объект для новой выделенной области
+            new_sel = SelectionRect(self._current_page)
+            # Устанавливаем ее "эталонные" координаты
+            new_sel.rect_ref = max_rect
+            # Пересчитываем "эталонные" координаты в экранные
+            new_sel.update_rect(self.scr_w, self.scr_h, self.ref_w, self.ref_h)
 
-            self._page_widget.update()
-            self.rect_selected.emit(True)
+            # Добавляем новое выделение в список выделений на текущей странице
+            self.selections.append(new_sel)
+            # Добавляем новое выделение в общий список выделений на всех страницах
+            self.selections_all.append(new_sel)
 
-    def remove_selection(self, remove_all=False):
-        if remove_all:
+        # Обновляем экран
+        self._page_widget.update()
+        # Эмитируем сигнал об изменении фокуса на выделенной области
+        self.rect_selected.emit(True)
+
+    def remove_selection(self, is_remove_all=False):
+        """Снять текущую выделенную область / все выделенные области (на всех страницах!!!)
+
+        Args:
+            is_remove_all (bool, optional): Признак снятия всех выделений (на всех страницах!!!). Defaults to False.
+        """
+        # Если нет текущей страницы, то сразу выходим
+        if self._current_page == -1:
+            return
+
+        # Если снимаем все выделения
+        if is_remove_all:
+            # то очищаем полностью оба списка выделенных областей
             self.selections.clear()
             self.selections_all.clear()
         else:
-            if self._current_page > -1:
-                if self.selected_rect > -1:
-                    ind = self.selections_all.index(self.selections[self.selected_rect])
-                    self.selections_all.pop(ind)
-                    self.selections.pop(self.selected_rect)
-        self.selected_rect = -1
-        self._page_widget.update()
-        self.rect_selected.emit(False)
+            # Если нет текущего выделения, то выходим
+            if self.selected_rect == -1:
+                return
+            # Ищем индекс удаляемого выделения в общем списке выделенных областей
+            ind = self.selections_all.index(self.selections[self.selected_rect])
+            # Удаляем элемент списка в общем списке выделенных областей
+            self.selections_all.pop(ind)
+            # Удаляем элемент списка в списке выделенных областей текущей страницы
+            self.selections.pop(self.selected_rect)
 
-    # def _scroll_contents_by(self, dx, dy):
-    #     super().scrollContentsBy(dx, dy)
-    #     self._page_widget.update()
+        # Снимаем фокус с выделенной области (если был)
+        self.selected_rect = -1
+        # Обновляем экран
+        self._page_widget.update()
+        # Эмитируем сигнал об изменении фокуса на выделенной области
+        self.rect_selected.emit(True)
 
     def _scroll_point_to_point(self, src_pt: QPoint, dest_pt: QPoint):
-        """Попытаться прокрутить рабочую область так, чтобы точка из системы координат изображения src_pt
-           оказалась в точке dest_pt системы координат области
+        """Попытаться прокрутить содержимое корневого виджета так, чтобы точка из системы координат страницы src_pt
+           оказалась в точке dest_pt системы координат корневого виджета
 
         Args:
-            src_pt (QPoint): точка из системы координат изображения
-            dest_pt (QPoint): точка в системе координат рабочей области
+            src_pt (QPoint): точка из системы координат страницы
+            dest_pt (QPoint): точка в системе координат корневого виджета
         """
-        # Переводим точку src_pt в систему координат рабочей области
+        # Переводим точку src_pt в систему координат корневого виджета
         src_pt = self._board_widget.mapToParent(self._page_widget.mapToParent(src_pt))
 
-        # Тупо сдвигаем содержимое рабочей области на разницу в координатах
+        # Тупо сдвигаем содержимое корневого виджета на разницу в координатах
         self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + src_pt.x() - dest_pt.x())
         self.verticalScrollBar().setValue(self.verticalScrollBar().value() + src_pt.y() - dest_pt.y())
 
     def _set_sizes(self):
+        """Изменяем размер виджета-контейнера страницы"""
+        # Определяем размер виджета-контейнера страницы исходя из размера виджета страницы + 20px, а
+        # если полученная высота или ширина меньше высоты или ширины вьюпорта корневого контейнера,
+        # то соответствующие размеры берем от вьюпорта корневого контейнера
         ww = max(self.viewport().width(), self._page_widget.width() + 20)
         hh = max(self.viewport().height(), self._page_widget.height() + 20)
+        # Записываем полученные значения в размеры виджета-контейнера страницы
         self._board_widget.setFixedHeight(hh)
         self._board_widget.setFixedWidth(ww)
+        # Сдвигаем виджет страницы внутри виджета-контейнера по горизонтали так, чтобы слева от
+        # страницы был margin минимум 10 px, а при мелких масштабах, чтобы страница была по центру вьюпорта
         self._page_widget.move((ww - self._page_widget.width()) // 2, 10)
 
-    def _set_image(self, new_image):
+    def _show_page(self, pno: int, is_force: bool = False):
+        """Показать страницу документа
+
+        Args:
+            pno (int): индекс страницы
+            is_force (bool, optional): перерисовать страницу в любом случае, иначе - только если
+                                       она не была текущей. Defaults to False.
+        """
+        # Если индекс страницы совпадает с текущей и не стоит признак перерисовывать всегда, то выходим
+        if self._current_page == pno and not is_force:
+            return
+
+        # Устанавливаем переданный индекс в качестве текущей страницы
+        self._current_page = pno
+        # Рендерим изображение
+        pix = self._doc[pno].get_pixmap(alpha=False, matrix=self._matrix, colorspace=fitz.csRGB)
+
+        # Переводим изображение в QImage
+        new_image = QImage(pix.samples_mv, pix.width, pix.height, pix.width * 3, QImage.Format_RGB888)
+
+        # Запоминаем "эталонные" размеры страницы текущей документа
+        self.ref_w = pix.width
+        self.ref_h = pix.height
+
+        # Устанавливаем новое изображение страницы
         self._page_widget.setPixmap(QPixmap.fromImage(new_image))
+
+        # Изменяем экранный размер отображения страницы исходя из установленного масштаба
+        # при обычном отображении страницы выделенные области не пересчитываем, а если форс - то
+        # обновляем и их экранные координаты
+        self._update_size(is_force)
+
+        # Дальнейшие действия не нужны для форс - режима
+        if is_force:
+            return
+
+        # Сбрасываем фокус с выделенной области (если он был)
+        self.selected_rect = -1
+        # Перезаполняем список выделенных областей на текущей странице
+        self.selections = [sel for sel in self.selections_all if sel.pno in (-1, pno)]
+
+        # В цикле пересчитываем "эталонные" координаты выделенных областей в экранные
+        for sel in self.selections:
+            sel.update_rect(self.scr_w, self.scr_h, self.ref_w, self.ref_h)
+
+        # Эмитируем сигнал об изменении фокуса на выделенной области
+        self.rect_selected.emit(False)
+        # Эмитируем сигнал об изменении страницы
+        self.current_page_changed.emit(pno)
+
+    def _update_size(self, is_update_selections: bool = True):
+        """Обновляем экранный размер отображения страницы исходя из установленного масштаба
+
+        Args:
+            is_update_selections (bool, optional): обновить экранные размеры выделенных областей. Defaults to True.
+        """
+        # Определяем размеры отображения страницы на экране исходя из текущего масштаба
         new_size = self._scale_factor / 3 * self._page_widget.pixmap().size()
+        # Устанавливаем размеры отображения страницы на экране
         self._page_widget.resize(new_size)
+        # Изменяем размер виджета-контейнера страницы
         self._set_sizes()
+        # Запоминаем экранные размеры страницы текущей документа
         self.scr_w = new_size.width()
         self.scr_h = new_size.height()
 
-    def _show_page(self, pno):
-        if self._current_page != pno:
-            self._current_page = pno
-            pix = self._doc[pno].get_pixmap(alpha=False, matrix=self._matrix, colorspace=fitz.csRGB)
+        # Выходим, если не надо обновлять экранные размеры выделенных областей
+        if not is_update_selections:
+            return
 
-            new_image = QImage(pix.samples_mv, pix.width, pix.height, pix.width * 3, QImage.Format_RGB888)
-
-            self.eth_w = pix.width
-            self.eth_h = pix.height
-            if new_image.isNull():
-                pass
-            else:
-                self._set_image(new_image)
-
-            self.selected_rect = -1
-            self.selections = [sel for sel in self.selections_all if (sel.pno == -1 or sel.pno == pno)]
-
-            i = len(self.selections)
-            while i > 0:
-                i -= 1
-                r = self.selections[i]
-                # Если не вмещается в страницу, дизейблим...
-                r.update_r(self.scr_w, self.scr_h, self.eth_w, self.eth_h, True)
-
-            self.rect_selected.emit(False)
-            self.current_page_changed.emit(pno)
-
-    def _normal_size(self):
-        self._scale_factor = 1.0
-        new_size = self._scale_factor / 3 * self._page_widget.pixmap().size()
-        self._page_widget.resize(new_size)
-        self.scr_w = new_size.width()
-        self.scr_h = new_size.height()
-        for r in self._page_widget.selections:
-            r.update_r(self.scr_w, self.scr_h, self.eth_w, self.eth_h)
-        self._set_sizes()
+        # Обновляем экранные размеры выделенных областей исходя из "эталонных" значений
+        for sel in self.selections:
+            sel.update_rect(self.scr_w, self.scr_h, self.ref_w, self.ref_h)
 
     def scale_image(self, factor, wheel_mouse_pos=None, newscale=1.0):
+        """Масштабировать изображение страницы
+
+        Args:
+            factor: множитель, который необходимо применить к текущему масштабу. Если 1, то устанавливаем 100%.
+            wheel_mouse_pos (optional): позиция курсора мыши при прокручивании колесика. Defaults to None.
+            newscale (float, optional): новый масштаб, если factor не равен 1. Defaults to 1.0.
+        """
+        # Если это не переход на 100%, то рассчитываем новый масштаб
         if factor != 1:
             newscale = self._scale_factor * factor
 
+        # Если новый масштаб вылезает за допустимые рамки, то ограничиваем его
         if newscale < 0.2:
             newscale = 0.2
         elif newscale > 3.0:
             newscale = 3.0
-        elif 0.95 < newscale < 1.1:
+        elif 0.95 < newscale < 1.1:  # близкие к единице значения округляем до 100%
             newscale = 1.0
 
-        if self._scale_factor != newscale:
-            factor = newscale / self._scale_factor
-            self._scale_factor = newscale
+        # Если масштаб не изменился - то выходим
+        if self._scale_factor == newscale:
+            return
 
-            if wheel_mouse_pos is None:
-                dest_point = QPoint(0, 0)
-            else:
-                dest_point = wheel_mouse_pos
+        # Обратным счетом определяем множитель изменения масштаба
+        factor = newscale / self._scale_factor
+        # Сохраняем значение нового масштаба
+        self._scale_factor = newscale
 
-            # destPoint - это "якорная" точка относительно левого верхнего угла всего виджета
-            # srcPoint - это "якорная" точка относительно левого верхнего угла страницы документа
-            src_point = self._page_widget.mapFromParent(self._board_widget.mapFromParent(dest_point))
-            # приводим srcPoint к новому масштабу
-            src_point.setX(src_point.x() * factor)
-            src_point.setY(src_point.y() * factor)
+        # Если это не увеличение колесиком мышки, то реперную точку ставим в левый верхний угол корневого виджета
+        if wheel_mouse_pos is None:
+            dest_point = QPoint(0, 0)
+        else:
+            # иначе реперную точку ставим в позицию курсора относительно корневого виджета
+            dest_point = wheel_mouse_pos
 
-            new_size = self._scale_factor / 3 * self._page_widget.pixmap().size()
-            self._page_widget.resize(new_size)
-            self.scr_w = new_size.width()
-            self.scr_h = new_size.height()
+        # destPoint - это "якорная" точка относительно левого верхнего угла корневого виджета
+        # srcPoint - это "якорная" точка относительно левого верхнего угла виджета страницы документа
+        src_point = self._page_widget.mapFromParent(self._board_widget.mapFromParent(dest_point))
+        # приводим srcPoint к новому масштабу (это будет координата, которую нужно подставить под курсор мыши)
+        src_point.setX(src_point.x() * factor)
+        src_point.setY(src_point.y() * factor)
 
-            self._set_sizes()
+        # Изменяем экранный размер отображения страницы исходя из установленного масштаба
+        self._update_size()
 
-            for r in self.selections:
-                r.update_r(self.scr_w, self.scr_h, self.eth_w, self.eth_h)
+        # Эмитируем сигнал об изменении масштаба
+        self.zoom_factor_changed.emit(self._scale_factor)
+        # Эмитируем сигнал о необходимости сдвинуть содержимое корневого виджета исходя из двух переданных координат
+        self.scroll_requested.emit(src_point, dest_point)
 
-            self.zoom_factor_changed.emit(self._scale_factor)
-            self.scroll_requested.emit(src_point, dest_point)
+    def set_selection_points(self, pt: QPoint, nm: int):
+        """Установить координаты текущей выделенной области в соответствии с переданной координатой положения
+        курсора мыши и идентификатором выполняемого действия (вызывается из mousePressEvent и mouseMoveEvent)
 
-    def set_selection_point(self, pt: QPoint, nm: int):
-        """Установить координаты текущей выделенной области в соответствии
-        с идентификатором действия
+        ACT_FIX_FIRST_POINT - 1 - началось выделение области, оба угла фиксируются в точке нажатия мыши pt
 
-        1 - начало выделения области, оба угла устанавливаются в точку pt
+        ACT_MOVE_SECOND_POINT - 2 - первый угол зафиксирован ранее, второй угол перемещается в точку pt
 
-        2 - перемещение второго угла в точку pt
+        ACT_FIX_ANCHOR_POINT - 3 - началось перемещение всей выделенной области, фиксируем pt как "точку зацепа"
 
-        3 - начало перемещения всей выделенной области, фиксация pt как "точки зацепа"
+        ACT_MOVE_ANCHOR_POINT - 4 - выделенная область перемещается на дельту = (pt - "точки зацепа"),
+                                    pt фиксируем как новую "точку зацепа"
 
-        4 - перемещение всей выделенной области на дельту (pt - "точки зацепа"), фиксация pt как новой "точки зацепа"
+        ACT_RESIZE_X - 5 - перемещается вертикальная сторона в pt.x(), противоположная сторона зафиксирована
 
-        5 - перемещение вертикальной стороны в точку положение pt.x()
+        ACT_RESIZE_Y - 6 - перемещается горизонтальная сторона в pt.y(), противоположная сторона зафиксирована
 
-        6 - перемещение горизонтальной стороны в точку положение pt.y()
-
-        11 - 19 - начало изменения размеров выделенной области за угол/сторону = (nm-10)
+        > ACT_MOVE_MARKER - [11 - 19] - началось изменение размера выделенной области за маркер (угол или сторону),
+                                        идентификатор маркера = nm - ACT_MOVE_MARKER
 
         Args:
-            pt (QPoint): полощение указателя мыши
+            pt (QPoint): положение указателя мыши в системе координат виджета страницы документа
             nm (int): идентификатор действия
         """
-
-        if nm > 10:
+        # Начали перемещать маркер?
+        if nm > ACT_MOVE_MARKER:
+            # Определяем какой именно маркер перемещается
+            nm -= ACT_MOVE_MARKER
+            # Сохраняем ссылку на объект с выделенной областью в переменную с коротким именем
             r = self.selections[self.selected_rect]
-            if nm in (11, 13, 17, 19):
-                if nm == 19:
-                    self.selection_point1 = QPoint(r.x1(), r.y1())
-                elif nm == 17:
-                    self.selection_point1 = QPoint(r.x2(), r.y1())
-                elif nm == 13:
-                    self.selection_point1 = QPoint(r.x1(), r.y2())
-                elif nm == 11:
-                    self.selection_point1 = QPoint(r.x2(), r.y2())
-                nm = 2
-            if nm == 18 or nm == 16:
-                self.selection_point1 = QPoint(r.x1(), r.y1())
-                self.selection_point2 = QPoint(r.x2(), r.y2())
-                nm = self.move_mode + 2
-            elif nm == 12 or nm == 14:
-                self.selection_point1 = QPoint(r.x2(), r.y2())
-                self.selection_point2 = QPoint(r.x1(), r.y1())
-                nm = self.move_mode + 2
 
+            # Перемещается один из угловых маркеров?
+            if nm in (DIR_NW, DIR_NE, DIR_SW, DIR_SE):
+                # Фиксируем в selection_point1 координаты противоположного угла
+                if nm == DIR_NW:  # левый верхний угол
+                    self.selection_point1 = QPoint(r.x2, r.y2)
+                elif nm == DIR_NE:  # правый верхний угол
+                    self.selection_point1 = QPoint(r.x1, r.y2)
+                elif nm == DIR_SW:  # левый нижний угол
+                    self.selection_point1 = QPoint(r.x2, r.y1)
+                elif nm == DIR_SE:  # правый нижний угол
+                    self.selection_point1 = QPoint(r.x1, r.y1)
+                # Меняем действие на перемещение второго угла
+                nm = ACT_MOVE_SECOND_POINT
+
+            # Перемещается маркер, расположенный на середине верхней или левой стороны?
+            elif nm in (DIR_N, DIR_W):
+                # Фиксируем в selection_point1 координаты неподвижного правого нижнего угла,
+                # а selection_point2 координаты перемещаемого левого верхнего угла
+                self.selection_point1 = QPoint(r.x2, r.y2)
+                self.selection_point2 = QPoint(r.x1, r.y1)
+                # Меняем действие на ресайз по X или Y
+                nm = ACT_RESIZE_X if nm == DIR_W else ACT_RESIZE_Y
+
+            # Перемещается маркер, расположенный на середине нижней или правой стороны?
+            elif nm in (DIR_E, DIR_S):
+                # Фиксируем в selection_point1 координаты неподвижного левого верхнего угла,
+                # а selection_point2 координаты перемещаемого правого нижнего угла
+                self.selection_point1 = QPoint(r.x1, r.y1)
+                self.selection_point2 = QPoint(r.x2, r.y2)
+                # Меняем действие на ресайз по X или Y
+                nm = ACT_RESIZE_X if nm == DIR_E else ACT_RESIZE_Y
+
+        # Корректируем положение точки курсора мыши так, чтобы она находилась в пределах страницы
         pt.setX(min(max(pt.x(), 0), self._page_widget.width() - 1))
         pt.setY(min(max(pt.y(), 0), self._page_widget.height() - 1))
-        if nm in (1, 2, 5, 6):
-            if nm == 1:
+
+        # Если выделение только создается (ACT_FIX_FIRST_POINT) или уже ресайзится (остальные варианты), то...
+        if nm in (ACT_FIX_FIRST_POINT, ACT_MOVE_SECOND_POINT, ACT_RESIZE_X, ACT_RESIZE_Y):
+            if nm == ACT_FIX_FIRST_POINT:
+                # Выделение только создается, поэтому оба угла области выделения фиксируем в точке курсора
                 self.selection_point1 = pt
                 self.selection_point2 = pt
             else:
-                if nm == 2:
+                if nm == ACT_MOVE_SECOND_POINT:
+                    # Угол selection_point1 уже был зафиксирован ранее, а сейчас меняем
+                    # положение угла selection_point2
                     self.selection_point2 = pt
-                elif nm == 5:
+                elif nm == ACT_RESIZE_X:
+                    # Угол selection_point1 уже был зафиксирован ранее, а сейчас меняем
+                    # положение "противоположной" вертикальной стороны
                     self.selection_point2.setX(pt.x())
-                elif nm == 6:
+                elif nm == ACT_RESIZE_Y:
+                    # Угол selection_point1 уже был зафиксирован ранее, а сейчас меняем
+                    # положение "противоположной" горизонтальной стороны
                     self.selection_point2.setY(pt.y())
+
+                # Переводим координаты точки из системы координат виджета страницы документа
+                # в систему координат виджета-контейнера
                 p_pt = self._page_widget.mapToParent(pt)
+                # Пытаемся "прокрутить" содержимое корневого виджета, чтобы точка p_pt дочернего виджета была видна
                 self.ensureVisible(p_pt.x(), p_pt.y(), 10, 10)
+
+            # Обновляем координаты выделенной области в объекте из списка выделенных областей текущей страницы
             self.selections[self.selected_rect].set_x1y1_x2y2(self.selection_point1, self.selection_point2)
-        else:
-            if nm == 3:
-                self.move_point = pt
-            else:
-                dx = pt.x() - self.move_point.x()
-                dy = pt.y() - self.move_point.y()
-                r = self.selections[self.selected_rect]
-                r.get_rect().adjust(dx, dy, dx, dy)
+            # Обновляем экран
+            self._page_widget.update()
+            # С этими действиями все...
+            return
 
-                dx, dy = r.adjust_position(self._page_widget.width(), self._page_widget.height())
+        # Если началось перемещение всей выделенной области, фиксируем pt как "точку зацепа" и выходим
+        if nm == ACT_FIX_ANCHOR_POINT:
+            self.move_point = pt
+            return
 
-                p_pt = self._page_widget.mapToParent(pt)
-                if dx or dy:
-                    pt.setX(pt.x() - dx)
-                    pt.setY(pt.y() - dy)
+        # Остался последний вариант - ACT_MOVE_ANCHOR_POINT, если это вдруг не он, то выходим
+        if nm != ACT_MOVE_ANCHOR_POINT:
+            return
 
-                self.move_point = pt
-                self.ensureVisible(p_pt.x(), p_pt.y(), 10, 10)
+        # Определяем на какие дельты по x и y сдвинулись по сравнению с предыдущим положением
+        dx = pt.x() - self.move_point.x()
+        dy = pt.y() - self.move_point.y()
 
+        # Смещаем экранные координаты текущего выделения в соответствии с дельтами смещения курсора мыши
+        r = self.selections[self.selected_rect]
+        r.rect.adjust(dx, dy, dx, dy)
+
+        # Проверяем, укладывается ли теперь смещенная выделенная область в размеры страницы,
+        # если нет - немного сдвигаем обратно, чтобы вернуть на страницу, и сохраняем эту дельту в dx и dy
+        dx, dy = r.adjust_position(self._page_widget.width(), self._page_widget.height())
+
+        # Переводим координаты точки из системы координат виджета страницы документа
+        # в систему координат виджета-контейнера
+        p_pt = self._page_widget.mapToParent(pt)
+
+        # Выехали за пределы страницы?
+        if dx or dy:
+            # Если так, то корректируем положение новой "точки зацепа" на дельту "выезда" за пределы страницы
+            pt.setX(pt.x() - dx)
+            pt.setY(pt.y() - dy)
+
+        # Фиксируем pt как новую "точку зацепа"
+        self.move_point = pt
+
+        # Пытаемся "прокрутить" содержимое корневого виджета, чтобы точка p_pt дочернего виджета была видна
+        self.ensureVisible(p_pt.x(), p_pt.y(), 10, 10)
+
+        # Обновляем экран
         self._page_widget.update()
 
     ###########################################################################
@@ -1335,12 +1621,12 @@ class SiaPdfView(QScrollArea):
             if self.selections:
                 # нажат Shift?
                 if shft:
-                    # перемещаем фокус на предыдущее выделение
+                    # перемещаем фокус на предыдущее выделение (по кругу)
                     if self.selected_rect <= 0:
                         self.selected_rect = len(self.selections)
                     self.selected_rect -= 1
                 else:
-                    # перемещаем фокус на следующее выделение
+                    # перемещаем фокус на следующее выделение (по кругу)
                     self.selected_rect += 1
                     if self.selected_rect == len(self.selections):
                         self.selected_rect = 0
@@ -1349,7 +1635,7 @@ class SiaPdfView(QScrollArea):
                 self.rect_selected.emit(True)
 
                 # Смещаем изображение, чтобы был виден левый верхний угол фокусного выделения
-                p_pt = self._page_widget.mapToParent(self.selections[self.selected_rect].r.topLeft())
+                p_pt = self._page_widget.mapToParent(self.selections[self.selected_rect].rect.topLeft())
                 self.ensureVisible(p_pt.x(), p_pt.y(), 50, 50)
 
                 # Обновляем экран
@@ -1382,7 +1668,7 @@ class SiaPdfView(QScrollArea):
             ensure_visible_x = (
                 -self.selections[self.selected_rect]
                 .shift_x(-1 if ctrl else -10, shft, self._page_widget.width(), self._page_widget.height())
-                .x2()
+                .x2
             )  # обеспечиваем видимость правой стороны
 
         elif key == Qt.Key.Key_Right:  # "вправо" без и с Ctrl и Shift
@@ -1390,20 +1676,20 @@ class SiaPdfView(QScrollArea):
                 ensure_visible_x = (
                     self.selections[self.selected_rect]
                     .shift_x(1 if ctrl else 10, shft, self._page_widget.width(), self._page_widget.height())
-                    .x2()
+                    .x2
                 )  # обеспечиваем видимость правой стороны
             else:
                 ensure_visible_x = (
                     self.selections[self.selected_rect]
                     .shift_x(1 if ctrl else 10, shft, self._page_widget.width(), self._page_widget.height())
-                    .x1()
+                    .x1
                 )  # обеспечиваем видимость левой стороны
 
         elif key == Qt.Key.Key_Up:  # "вверх" без и с Ctrl и Shift
             ensure_visible_y = (
                 -self.selections[self.selected_rect]
                 .shift_y(-1 if ctrl else -10, shft, self._page_widget.width(), self._page_widget.height())
-                .y2()
+                .y2
             )  # обеспечиваем видимость нижней стороны
 
         elif key == Qt.Key.Key_Down:  # "вниз" без и с Ctrl и Shift
@@ -1411,13 +1697,13 @@ class SiaPdfView(QScrollArea):
                 ensure_visible_y = (
                     self.selections[self.selected_rect]
                     .shift_y(1 if ctrl else 10, shft, self._page_widget.width(), self._page_widget.height())
-                    .y2()
+                    .y2
                 )  # обеспечиваем видимость нижней стороны
             else:
                 ensure_visible_y = (
                     self.selections[self.selected_rect]
                     .shift_y(1 if ctrl else 10, shft, self._page_widget.width(), self._page_widget.height())
-                    .y1()
+                    .y1
                 )  # обеспечиваем видимость верхней стороны
 
         else:  # все остальные клавиши обрабатываем в стандартном порядке
@@ -1446,7 +1732,7 @@ class SiaPdfView(QScrollArea):
             self.ensureVisible(vp_x_min, abs(ensure_visible_y), 0, 20)
 
         # Обновляем координаты выделения
-        self.selections[self.selected_rect].update_r_f(self.scr_w, self.scr_h, self.eth_w, self.eth_h)
+        self.selections[self.selected_rect].update_rect_ref(self.scr_w, self.scr_h, self.ref_w, self.ref_h)
 
         # Обновляем экран
         self._page_widget.update()
@@ -1537,57 +1823,57 @@ class BoardWidget(QWidget):
             return
 
         # Корневой виджет
-        root_widget = self._root_widget
+        m_root_widget = self._root_widget
 
         # Определяем положение мыши в системе координат страницы документа
         pt = self._page_widget.mapFromParent(event.pos())
 
         # Есть фокус на выделении?
-        if root_widget.selected_rect >= 0:
+        if m_root_widget.selected_rect >= 0:
             # Получаем координаты выделения с фокусом
-            r = root_widget.selections[root_widget.selected_rect]
+            r = m_root_widget.selections[m_root_widget.selected_rect]
             # Проверяем как соотносится положение мыши с выделенной областью
-            dir_rect = r.dir_rect(pt)
+            dir_rect = r.get_dir_rect(pt)
             if event.button() == Qt.MouseButton.LeftButton and dir_rect == DIR_IN:  # левая кнопка внутри
                 # Переходим в режим перемещения
-                root_widget.move_mode = MODE_MOVE_ALL
+                m_root_widget.move_mode = MODE_MOVE_ALL
                 # "Захватываем" якорную точку
-                root_widget.set_selection_point(pt, 3)
+                m_root_widget.set_selection_points(pt, ACT_FIX_ANCHOR_POINT)
 
             elif dir_rect == DIR_OUT:  # левая или правая кнопка снаружи
                 # Снимаем фокус с выделенной области
-                root_widget.selected_rect = -1
+                m_root_widget.selected_rect = -1
                 # Эмитируем сигнал rect_selected
-                root_widget.rect_selected.emit(False)
+                m_root_widget.rect_selected.emit(False)
                 # Обновляем экран
                 self._page_widget.update()
 
             elif event.button() == Qt.MouseButton.LeftButton:  # остальные варианты для левой кнопки
                 # Переходим в режим изменения размера
                 if dir_rect in (DIR_W, DIR_E):  # на середине вертикальных сторон
-                    root_widget.move_mode = MODE_MOVE_VERT_BORDER
+                    m_root_widget.move_mode = MODE_MOVE_VERT_BORDER
                 elif dir_rect in (DIR_N, DIR_S):  # на середине горизонтальных сторон
-                    root_widget.move_mode = MODE_MOVE_HOR_BORDER
+                    m_root_widget.move_mode = MODE_MOVE_HOR_BORDER
                 else:  # на углах
-                    root_widget.move_mode = MODE_MOVE_CORNER
+                    m_root_widget.move_mode = MODE_MOVE_CORNER
 
                 # "Захватываем" передвигаемую точку
-                root_widget.set_selection_point(pt, 10 + dir_rect)
+                m_root_widget.set_selection_points(pt, ACT_MOVE_MARKER + dir_rect)
 
                 # Меняем форму курсора на крест
                 self.setCursor(Qt.CursorShape.CrossCursor)
 
         # Нет (или не стало) фокуса на выделении?
-        if root_widget.selected_rect == -1:
+        if m_root_widget.selected_rect == -1:
             # Перебираем все выделения на странице
-            for i, r in enumerate(root_widget.selections):
+            for i, r in enumerate(m_root_widget.selections):
                 # Проверяем как соотносится положение мыши с выделенной областью
-                dir_rect = r.dir_rect(pt)
+                dir_rect = r.get_dir_rect(pt)
                 if dir_rect == DIR_IN:  # внутри
                     # Устанавливаем фокус на эту выделенную область
-                    root_widget.selected_rect = i
+                    m_root_widget.selected_rect = i
                     # Эмитируем сигнал rect_selected
-                    root_widget.rect_selected.emit(True)
+                    m_root_widget.rect_selected.emit(True)
 
                     # Если это правая кнопка, то обновляем экран с новым фокусом
                     if event.button() == Qt.MouseButton.RightButton:
@@ -1595,9 +1881,9 @@ class BoardWidget(QWidget):
                         break
 
                     # Переходим в режим перемещения
-                    root_widget.move_mode = MODE_MOVE_ALL
+                    m_root_widget.move_mode = MODE_MOVE_ALL
                     # "Захватываем" якорную точку
-                    root_widget.set_selection_point(pt, 3)
+                    m_root_widget.set_selection_points(pt, ACT_FIX_ANCHOR_POINT)
                     # Меняем форму курсора на крест
                     self.setCursor(Qt.CursorShape.SizeAllCursor)
                     break
@@ -1608,28 +1894,28 @@ class BoardWidget(QWidget):
             return
 
         # Все еще нет фокуса на выделении?
-        if root_widget.selected_rect == -1:
+        if m_root_widget.selected_rect == -1:
             # Если достигли максимума количества выделений, то выполняем стандартную обработку и выходим
-            if len(root_widget.selections_all) >= root_widget.selections_max:
+            if len(m_root_widget.selections_all) >= m_root_widget.selections_max:
                 super().mousePressEvent(event)
 
             # Устанавливаем фокус на новую выделенную область
-            root_widget.selected_rect = len(root_widget.selections)
+            m_root_widget.selected_rect = len(m_root_widget.selections)
             # Создаем объект для новой выделенной области (с Ctrl - глобальное выделение)
             newsel = SelectionRect(
-                -1 if event.modifiers() & Qt.KeyboardModifier.ControlModifier else root_widget.current_page
+                -1 if event.modifiers() & Qt.KeyboardModifier.ControlModifier else m_root_widget.current_page
             )
             # Добавляем новую выделенную область в списки
-            root_widget.selections.append(newsel)
-            root_widget.selections_all.append(newsel)
+            m_root_widget.selections.append(newsel)
+            m_root_widget.selections_all.append(newsel)
             # Переходим в режим перемещения угла
-            root_widget.move_mode = MODE_MOVE_CORNER
+            m_root_widget.move_mode = MODE_MOVE_CORNER
             # "Фиксируем" начальный угол нового выделения
-            root_widget.set_selection_point(pt, 1)
+            m_root_widget.set_selection_points(pt, ACT_FIX_FIRST_POINT)
             # Меняем форму курсора на крест
             self.setCursor(Qt.CursorShape.CrossCursor)
             # Эмитируем сигнал rect_selected
-            root_widget.rect_selected.emit(True)
+            m_root_widget.rect_selected.emit(True)
 
         # Выполняем стандартную обработку и выходим
         super().mousePressEvent(event)
@@ -1642,7 +1928,7 @@ class BoardWidget(QWidget):
         # Перебираем все выделенные области
         for i, r in enumerate(self._root_widget.selections):
             # Определяем местоположение указателя мыши по отношению к этой выделенной области
-            dir_rect = r.dir_rect(pt)
+            dir_rect = r.get_dir_rect(pt)
 
             # Если указательза пределами выделенной области, то пропускаем итерацию
             if dir_rect == DIR_OUT:
@@ -1693,16 +1979,16 @@ class BoardWidget(QWidget):
                 self._root_widget.emit_coords_text(pt)
 
         elif self._root_widget.move_mode == MODE_MOVE_CORNER:  # двигаем угол
-            self._root_widget.set_selection_point(pt, 2)
+            self._root_widget.set_selection_points(pt, ACT_MOVE_SECOND_POINT)
 
         elif self._root_widget.move_mode == MODE_MOVE_ALL:  # двигаем всю область
-            self._root_widget.set_selection_point(pt, 4)
+            self._root_widget.set_selection_points(pt, ACT_MOVE_ANCHOR_POINT)
 
         elif self._root_widget.move_mode == MODE_MOVE_VERT_BORDER:  # двигаем вертикальные стороны
-            self._root_widget.set_selection_point(pt, 5)
+            self._root_widget.set_selection_points(pt, ACT_RESIZE_X)
 
         elif self._root_widget.move_mode == MODE_MOVE_HOR_BORDER:  # двигаем горизонтальные стороны
-            self._root_widget.set_selection_point(pt, 6)
+            self._root_widget.set_selection_points(pt, ACT_RESIZE_Y)
 
         # Вызываем обработчик родительского класса
         super().mouseMoveEvent(event)
@@ -1718,11 +2004,11 @@ class BoardWidget(QWidget):
             # Находились в режим перемещения угла или середины выделения (изменения размера)
             if root_widget.move_mode in (MODE_MOVE_CORNER, MODE_MOVE_VERT_BORDER, MODE_MOVE_HOR_BORDER):
                 # Обновляем "эталонные" координаты выделенной области (исходя из новых экранных)
-                root_widget.selections[root_widget.selected_rect].update_r_f(
-                    root_widget.scr_w, root_widget.scr_h, root_widget.eth_w, root_widget.eth_h
+                root_widget.selections[root_widget.selected_rect].update_rect_ref(
+                    root_widget.scr_w, root_widget.scr_h, root_widget.ref_w, root_widget.ref_h
                 )
                 # Если размер области слишком мал, то ликвидируем его
-                if root_widget.selections[root_widget.selected_rect].is_null():
+                if root_widget.selections[root_widget.selected_rect].is_null:
                     ind = root_widget.selections_all.index(root_widget.selections[root_widget.selected_rect])
                     # удаляем из общего списка
                     root_widget.selections_all.pop(ind)
@@ -1738,8 +2024,8 @@ class BoardWidget(QWidget):
             # Находимся в режим перемещения всего выделения
             elif root_widget.move_mode == MODE_MOVE_ALL:
                 # Пересчитываем "эталонные" координаты выделения (исходя из новых экранных)
-                root_widget.selections[root_widget.selected_rect].update_r_f(
-                    root_widget.scr_w, root_widget.scr_h, root_widget.eth_w, root_widget.eth_h
+                root_widget.selections[root_widget.selected_rect].update_rect_ref(
+                    root_widget.scr_w, root_widget.scr_h, root_widget.ref_w, root_widget.ref_h
                 )
 
             # Сбрасываем режим перемещения
@@ -1817,7 +2103,7 @@ class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
             if not r.enabled:
                 painter.setPen(self.pen_dis)
                 painter.setBrush(self.fill_dis)
-                painter.drawRect(r.get_rect())
+                painter.drawRect(r.rect)
                 continue
 
             # Если выделение активно, выводим цветами в зависимости от его "глобальности"
@@ -1826,7 +2112,7 @@ class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
                 painter.setBrush(self.fill_all)
             else:
                 painter.setBrush(self.fill)
-            painter.drawRect(r.get_rect())
+            painter.drawRect(r.rect)
 
             # Если выделение активно и имеет фокус, выводим маркеры по углам и по центрам сторон
             if i == self._root_widget.selected_rect:
@@ -1835,18 +2121,18 @@ class PageWidget(QLabel):  # pylint: disable=too-many-instance-attributes
                 painter.setBrush(self.fill2)
 
                 #  Маркеры на углах
-                painter.drawRect(r.x1() - 3, r.y1() - 3, 6, 6)
-                painter.drawRect(r.x2() - 3, r.y1() - 3, 6, 6)
-                painter.drawRect(r.x1() - 3, r.y2() - 3, 6, 6)
-                painter.drawRect(r.x2() - 3, r.y2() - 3, 6, 6)
+                painter.drawRect(r.x1 - 3, r.y1 - 3, 6, 6)
+                painter.drawRect(r.x2 - 3, r.y1 - 3, 6, 6)
+                painter.drawRect(r.x1 - 3, r.y2 - 3, 6, 6)
+                painter.drawRect(r.x2 - 3, r.y2 - 3, 6, 6)
 
-                xc = (r.x1() + r.x2()) // 2
-                yc = (r.y1() + r.y2()) // 2
+                xc = (r.x1 + r.x2) // 2
+                yc = (r.y1 + r.y2) // 2
                 #  Маркеры на серединах сторон
-                painter.drawRect(xc - 3, r.y1() - 3, 6, 6)
-                painter.drawRect(r.x1() - 3, yc - 3, 6, 6)
-                painter.drawRect(r.x2() - 3, yc - 3, 6, 6)
-                painter.drawRect(xc - 3, r.y2() - 3, 6, 6)
+                painter.drawRect(xc - 3, r.y1 - 3, 6, 6)
+                painter.drawRect(r.x1 - 3, yc - 3, 6, 6)
+                painter.drawRect(r.x2 - 3, yc - 3, 6, 6)
+                painter.drawRect(xc - 3, r.y2 - 3, 6, 6)
 
         # Финализируем QPainter
         painter.end()

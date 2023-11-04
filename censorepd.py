@@ -327,7 +327,7 @@ def censore_img(img: PILImage.Image, rect, pixelator: int, mode: int = 1):
         # Пикселизация: вырезаем, уменьшаем (теряя детализацию), обратно увеличиваем и вставляем на место
         crop_img = img.crop(rect)
         img_small = crop_img.resize((crop_img.size[0] // pixelator, crop_img.size[1] // pixelator))
-        blur_image = img_small.resize(crop_img.size, PILImage.NEAREST)
+        blur_image = img_small.resize(crop_img.size, PILImage.NEAREST)  # pylint: disable=no-member
         img.paste(blur_image, rect)
     else:
         # Заливка белым
