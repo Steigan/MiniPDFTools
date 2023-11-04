@@ -23,11 +23,14 @@ root_widget (SiaPdfView: resizeEvent, keyPressEvent, wheelEvent)
 import logging
 import os
 import re
+from io import BytesIO
 
 import fitz
 import pytesseract
+from PIL import Image
 from PIL import ImageOps
-from PIL import ImageQt
+from PySide2.QtCore import QBuffer
+from PySide2.QtCore import QIODevice
 from PySide2.QtCore import QPoint
 from PySide2.QtCore import QRect
 from PySide2.QtCore import QRectF
@@ -112,6 +115,27 @@ def show_info_msg_box(parent, title: str, text: str):
     m_msg_box.setDefaultButton(QMessageBox.StandardButton.Ok)
     m_msg_box.setText(text)
     m_msg_box.exec()
+
+
+def fromqimage(im):
+    """
+    Замена для ImageQt.fromqimage из PIL
+    """
+    buffer = QBuffer()
+    buffer.open(QIODevice.ReadWrite)
+    # preserve alpha channel with png
+    # otherwise ppm is more friendly with Image.open
+    if im.hasAlphaChannel():
+        im.save(buffer, "png")
+    else:
+        im.save(buffer, "ppm")
+
+    b = BytesIO()
+    b.write(buffer.data())
+    buffer.close()
+    b.seek(0)
+
+    return Image.open(b)
 
 
 class SelectionRect:
@@ -914,7 +938,7 @@ class SiaPdfView(QScrollArea):
         # Получаем координаты выделения
         r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
         # Вырезаем выделенную область из изображения страницы
-        img = ImageQt.fromqimage(img.copy(r))
+        img = fromqimage(img.copy(r))
         # Распознаем
         recttext = pytesseract.image_to_string(img, lang='rus+eng')
         # Если is_trim == True, то убираем из текста лишние "пробельные" символы
@@ -941,7 +965,7 @@ class SiaPdfView(QScrollArea):
         # Получаем координаты выделения
         r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
         # Вырезаем выделенную область из изображения страницы
-        img = ImageQt.fromqimage(img.copy(r))
+        img = fromqimage(img.copy(r))
         # Распознаем QR коды
         decocde_qr = decode(img, [ZBarSymbol.QRCODE])
         # Если коды не найдены, пробуем инвертировать изображение
