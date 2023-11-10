@@ -712,7 +712,6 @@ class SiaPdfView(QScrollArea):
         r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
         # Вырезаем выделенную область из изображения страницы
         img = fromqimage(img.copy(r))
-        img = fromqimage(img.copy(r))
         # Распознаем
         recttext = pytesseract.image_to_string(img, lang='rus+eng')
         # Если is_trim == True, то убираем из текста лишние "пробельные" символы
@@ -739,7 +738,6 @@ class SiaPdfView(QScrollArea):
         # Получаем координаты выделения
         r = self.selections[self.selected_rect].get_scaled_rect(1, 1, 1, 1)
         # Вырезаем выделенную область из изображения страницы
-        img = fromqimage(img.copy(r))
         img = fromqimage(img.copy(r))
         # Распознаем QR коды
         decocde_qr = decode(img, [ZBarSymbol.QRCODE])
