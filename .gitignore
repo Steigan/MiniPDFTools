@@ -142,3 +142,7 @@ setup.cfg
 pyproject.toml
 .idea/
 freeze.txt
+.gigacode
+.agents
+skills-lock.json
+CONTEXT.md

@@ -187,3 +187,17 @@ def get_apps_paths() -> tuple:
 
     except configparser.Error:
         return '', '', ''
+
+
+def get_external_viewer_cmd() -> str:
+    """Получение из ini файла пути к внешней программе просмотра PDF
+
+    Возвращается путь к исполняемому файлу внешней программы просмотра PDF
+    из файла конфигурации. Если путь не указан, возвращается пустая строка.
+    """
+    config = configparser.ConfigParser()
+    try:
+        config.read(os.path.join(os.path.dirname(__file__), const.SETTINGS_FILENAME))
+        return config.get(const.SETTINGS_SECTION, 'pdfviewer_external_cmd', fallback='').strip()
+    except configparser.Error:
+        return ''

@@ -38,5 +38,6 @@
     <file>images/Paomedia-Small-N-Flat-Sign-right.svg</file>
     <file>images/pdf.ico</file>
     <file>images/opened_folder.svg</file>
+    <file>images/open_in_viewer.svg</file>
   </qresource>
 </RCC>

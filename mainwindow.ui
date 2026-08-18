@@ -57,6 +57,7 @@
     </property>
     <addaction name="actionNew"/>
     <addaction name="actionOpen"/>
+    <addaction name="actionOpenInViewer"/>
     <addaction name="actionSaveAs"/>
     <addaction name="actionClose"/>
     <addaction name="separator"/>
@@ -174,6 +175,7 @@
    </attribute>
    <addaction name="actionNew"/>
    <addaction name="actionOpen"/>
+   <addaction name="actionOpenInViewer"/>
    <addaction name="actionSaveAs"/>
    <addaction name="separator"/>
    <addaction name="actionZoom_Out"/>
@@ -203,6 +205,24 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="actionOpenInViewer">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/images/open_in_viewer.svg</normaloff>:/icons/images/open_in_viewer.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Открыть во внешней программе</string>
+   </property>
+   <property name="toolTip">
+    <string>Открыть во внешней программе</string>
+   </property>
+   <property name="statusTip">
+    <string>Открыть во внешней программе</string>
    </property>
   </action>
   <action name="actionQuit">

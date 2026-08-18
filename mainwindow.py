@@ -78,6 +78,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Загружаем настройки для запуска внешних приложений
         self._tesseract_cmd, self._pdfviewer_cmd, self._xlseditor_cmd = params.get_apps_paths()
+        self._external_viewer_cmd = params.get_external_viewer_cmd()
 
         # Добавляем элементы интерфейса для изменения масштаба и выбора номера страницы
         self.ui.zoom_selector = ZoomSelector(self)
@@ -283,6 +284,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
 
         # Отключаем доступность пункта меню удаления всех выделений
         self.ui.actionRemoveAllSelections.setEnabled(False)
+
+        # Открытие во внешней программе возможно только для реального файла на диске
+        self.ui.actionOpenInViewer.setEnabled(self.pdf_view.is_real_file)
 
     def _process_rect_selection(self, selected: bool):
         """Обработчик изменения количества выделенных областей и наличия активного выделения"""
@@ -734,6 +738,42 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes, 
         )
         if filename:
             self.open_or_combine_files(filename)
+
+    @Slot()
+    def on_actionOpenInViewer_triggered(self):  # pylint: disable=invalid-name
+        """Обработчик выбора пункта меню <Открыть во внешней программе>"""
+        # Только для реального файла, лежащего на диске
+        if not self.pdf_view.is_real_file:
+            return
+
+        filename = self.pdf_view.current_filename
+
+        # Если путь к программе просмотра указан в настройках, то используем его
+        if self._external_viewer_cmd:
+            if not os.path.exists(self._external_viewer_cmd):
+                QMessageBox.warning(
+                    self,
+                    self._title,
+                    f"Не найден файл программы просмотра PDF: {self._external_viewer_cmd}\n"
+                    'Проверьте путь к программе в файле конфигурации settings.ini '
+                    '(раздел [Settings], параметр pdfviewer_external_cmd).',
+                )
+                return
+            subprocess.Popen((self._external_viewer_cmd, filename))  # pylint: disable=consider-using-with
+            return
+
+        # Под Windows без указанной программы используем системное приложение по умолчанию
+        if platform.system() == 'Windows':
+            os.startfile(filename)
+            return
+
+        QMessageBox.warning(
+            self,
+            self._title,
+            'Не указан путь к программе просмотра PDF.\n'
+            'Укажите его в файле конфигурации settings.ini '
+            '(раздел [Settings], параметр pdfviewer_external_cmd).',
+        )
 
     @Slot()
     def on_actionSaveAs_triggered(self):  # pylint: disable=invalid-name
